@@ -5,6 +5,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.core.database import get_db
 from app.main import app
@@ -44,9 +45,12 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip)
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def engine():
-    _engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    # Function-scoped: pytest-asyncio gives each test its own event loop, and
+    # asyncpg connections must not outlive the loop they were created on.
+    # NullPool keeps no idle connections around between requests.
+    _engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

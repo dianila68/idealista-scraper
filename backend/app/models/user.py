@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,7 +24,9 @@ class User(Base, TimestampMixin):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     verification_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    verification_token_expires: Mapped[datetime | None] = mapped_column(nullable=True)
+    verification_token_expires: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Rome", nullable=False)
 
     filters: Mapped[list[Filter]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821

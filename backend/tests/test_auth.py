@@ -36,9 +36,10 @@ async def test_login_success(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient):
-    await client.post(
-        "/api/v1/auth/register", json={"email": "bad@example.com", "password": "correct"}
+    register = await client.post(
+        "/api/v1/auth/register", json={"email": "bad@example.com", "password": "correct-pass-123"}
     )
+    assert register.status_code == 201
     resp = await client.post(
         "/api/v1/auth/token", json={"email": "bad@example.com", "password": "wrong"}
     )

@@ -9,6 +9,13 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
 
 
+class UserLogin(BaseModel):
+    # No length constraints: login must not leak registration rules — any
+    # wrong password should produce 401, not 422.
+    email: EmailStr
+    password: str
+
+
 class UserResponse(BaseModel):
     id: UUID
     email: str

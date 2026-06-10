@@ -15,7 +15,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.schemas.user import RefreshRequest, TokenResponse, UserRegister
+from app.schemas.user import RefreshRequest, TokenResponse, UserLogin, UserRegister
 
 router = APIRouter()
 
@@ -40,7 +40,7 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)) -> di
 
 
 @router.post("/token", response_model=TokenResponse)
-async def login(body: UserRegister, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def login(body: UserLogin, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     result = await db.execute(select(User).where(User.email == body.email, User.is_active.is_(True)))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
