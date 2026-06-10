@@ -16,11 +16,10 @@ async def register_device(
     body: DeviceRegister,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> DeviceResponse:
     result = await db.execute(select(Device).where(Device.fcm_token == body.fcm_token))
     existing = result.scalar_one_or_none()
     if existing:
-        # Token already registered — re-associate with current user if needed
         if existing.user_id != user.id:
             existing.user_id = user.id
             await db.commit()
@@ -39,7 +38,7 @@ async def unregister_device(
     fcm_token: str,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> None:
     result = await db.execute(
         select(Device).where(Device.fcm_token == fcm_token, Device.user_id == user.id)
     )

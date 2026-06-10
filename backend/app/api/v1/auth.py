@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
+async def register(body: UserRegister, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -40,7 +40,7 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/token", response_model=TokenResponse)
-async def login(body: UserRegister, db: AsyncSession = Depends(get_db)):
+async def login(body: UserRegister, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     result = await db.execute(select(User).where(User.email == body.email, User.is_active.is_(True)))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
@@ -52,7 +52,7 @@ async def login(body: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     try:
         user_id = decode_token(body.refresh_token, "refresh")
     except JWTError as exc:
@@ -64,7 +64,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/verify")
-async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     result = await db.execute(
         select(User).where(
             User.verification_token == token,

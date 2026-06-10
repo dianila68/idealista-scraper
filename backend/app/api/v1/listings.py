@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -12,6 +12,7 @@ from app.core.deps import get_current_user
 from app.models.filter import Filter
 from app.models.listing import Listing
 from app.models.user import User
+from app.schemas.filter import FilterConfig
 from app.schemas.listing import ListingDetailResponse, ListingPage, ListingResponse, SourceStatus
 
 router = APIRouter()
@@ -39,15 +40,14 @@ async def list_listings(
     suggest_roommate: bool = Query(default=False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
-    query = select(Listing)
+) -> ListingPage:
+    query: Select[tuple[Listing]] = select(Listing)
 
     if filter_id is not None:
         filter_row = await db.get(Filter, filter_id)
         if filter_row is None or filter_row.user_id != user.id:
             raise HTTPException(status_code=404, detail="Filter not found")
-        config = filter_row.config
-        query = _apply_filter_config(query, config)
+        query = _apply_filter_config(query, filter_row.config)
 
     if source is not None:
         if source not in SOURCES:
@@ -75,7 +75,7 @@ async def list_listings(
     total = await db.scalar(count_q) or 0
 
     result = await db.execute(query.limit(per_page + 1))
-    rows = result.scalars().all()
+    rows = list(result.scalars().all())
     has_more = len(rows) > per_page
     rows = rows[:per_page]
 
@@ -103,7 +103,7 @@ async def list_listings(
 async def list_sources(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> list[SourceStatus]:
     statuses = []
     for src in SOURCES:
         count = await db.scalar(select(func.count()).where(Listing.source == src)) or 0
@@ -121,16 +121,16 @@ async def get_listing(
     listing_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> ListingDetailResponse:
     row = await db.get(Listing, listing_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Listing not found")
     return ListingDetailResponse.model_validate(row)
 
 
-def _apply_filter_config(query, config: dict):
-    """Narrow a Listing query based on a stored filter config dict."""
-    from app.schemas.filter import FilterConfig
+def _apply_filter_config(
+    query: Select[tuple[Listing]], config: dict  # type: ignore[type-arg]
+) -> Select[tuple[Listing]]:
     fc = FilterConfig.model_validate(config)
     if fc.listing_type:
         query = query.where(Listing.listing_type == fc.listing_type)
@@ -148,9 +148,11 @@ def _apply_filter_config(query, config: dict):
     return query
 
 
-async def _roommate_suggestions(db: AsyncSession, config: dict, per_page: int) -> list[ListingResponse]:
+async def _roommate_suggestions(
+    db: AsyncSession, config: dict, per_page: int  # type: ignore[type-arg]
+) -> list[ListingResponse]:
     from app.core.config import settings
-    from app.schemas.filter import FilterConfig
+
     fc = FilterConfig.model_validate(config)
     if fc.price.max is None:
         return []

@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, new_uuid
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class Filter(Base, TimestampMixin):
@@ -19,4 +25,4 @@ class Filter(Base, TimestampMixin):
     notify: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notify_digest: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    user: Mapped["User"] = relationship(back_populates="filters")  # noqa: F821
+    user: Mapped[User] = relationship(back_populates="filters")  # noqa: F821

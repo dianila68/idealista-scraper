@@ -1,3 +1,4 @@
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import structlog
@@ -10,7 +11,7 @@ log = structlog.get_logger()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("startup", env=settings.log_level)
     yield
     log.info("shutdown")
@@ -40,5 +41,5 @@ app.include_router(v1_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["meta"])
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "ok", "version": app.version}

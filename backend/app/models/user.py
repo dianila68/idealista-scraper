@@ -1,11 +1,18 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, new_uuid
+
+if TYPE_CHECKING:
+    from app.models.device import Device
+    from app.models.filter import Filter
 
 
 class User(Base, TimestampMixin):
@@ -20,5 +27,5 @@ class User(Base, TimestampMixin):
     verification_token_expires: Mapped[datetime | None] = mapped_column(nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Rome", nullable=False)
 
-    filters: Mapped[list["Filter"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
-    devices: Mapped[list["Device"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    filters: Mapped[list[Filter]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    devices: Mapped[list[Device]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
