@@ -1,0 +1,193 @@
+Noncommercial Public License v1.0
+==================================
+
+Copyright (c) 2024 Luigi Delle
+Contact: luigidelle05@gmail.com
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. Definitions
+--------------
+
+"License" means this Noncommercial Public License v1.0 document.
+
+"Licensor" means the copyright holder named above who grants rights under
+this License.
+
+"You" (or "Your") means an individual or legal entity exercising rights
+granted by this License.
+
+"Software" means the copyrighted work made available under this License,
+including all source code, object code, documentation, configuration files,
+scripts, and any other materials contained in the repository.
+
+"Derivative Work" means any work that is based on, translated from, adapted
+from, or otherwise derived from the Software in whole or in part, including
+but not limited to modifications, translations, abridgements, condensations,
+or any other form in which the Software may be recast, transformed, or adapted.
+
+"Non-Commercial Purpose" means any use, reproduction, distribution, or
+modification of the Software that:
+  (a) is not primarily intended for or directed towards commercial advantage
+      or monetary compensation; AND
+  (b) does not generate direct or indirect revenue for You or any third party.
+
+"Commercial Use" means any use, reproduction, distribution, or modification
+of the Software that does not qualify as a Non-Commercial Purpose, including
+but not limited to:
+  (a) selling the Software or any Derivative Work;
+  (b) offering the Software or any Derivative Work as a Software-as-a-Service
+      (SaaS) product or hosted service in exchange for payment or in support
+      of a revenue-generating service;
+  (c) incorporating the Software or any Derivative Work into a product or
+      service that is sold, licensed, or otherwise monetised;
+  (d) using the Software or any Derivative Work in a business context where
+      the primary purpose is revenue generation;
+  (e) sublicensing the Software or any Derivative Work to third parties for
+      compensation.
+
+2. Grant of Non-Commercial License
+------------------------------------
+
+Subject to the terms of this License, the Licensor hereby grants You a
+worldwide, royalty-free, non-exclusive license to:
+
+  (a) reproduce and use the Software for Non-Commercial Purposes;
+  (b) prepare Derivative Works of the Software for Non-Commercial Purposes;
+  (c) publicly display and publicly perform the Software and Derivative Works
+      for Non-Commercial Purposes;
+  (d) distribute copies of the Software and Derivative Works to third parties
+      for Non-Commercial Purposes.
+
+3. Conditions
+--------------
+
+Your exercise of the rights granted in Section 2 is subject to all of the
+following conditions:
+
+  3.1 Attribution.
+      Any distribution of the Software or a Derivative Work — in source or
+      binary form — must:
+        (a) retain this License text in its entirety;
+        (b) retain all copyright notices present in the original Software;
+        (c) include a prominent notice stating that the Software is licensed
+            under the Noncommercial Public License v1.0 and identifying the
+            Licensor.
+
+  3.2 Share-Alike for Derivative Works.
+      If You distribute a Derivative Work, You must release the Derivative
+      Work under this same License (Noncommercial Public License v1.0) with
+      no additional restrictions. You may not apply legal terms or
+      technological measures that restrict others from doing anything this
+      License permits.
+
+  3.3 No Commercial Use Without a Commercial License.
+      You may not exercise any right granted in Section 2 for Commercial Use
+      purposes without first obtaining a separate written commercial license
+      from the Licensor. See Section 5 for commercial licensing terms.
+
+  3.4 Integrity of the Licensor's Source.
+      If You distribute a Derivative Work in source form, You must carry
+      prominent notices stating that You changed the files and the date of
+      any changes.
+
+4. Redistribution to Third Parties
+------------------------------------
+
+You may distribute verbatim or modified copies of the Software to third
+parties provided that:
+  (a) each copy is accompanied by this complete License text;
+  (b) the distribution is solely for Non-Commercial Purposes;
+  (c) You do not charge a fee for the act of distribution itself beyond
+      reasonable cost-recovery for physical media.
+
+5. Commercial Licensing
+------------------------
+
+Commercial Use of the Software requires a separate, written commercial
+license agreement executed with the Licensor.
+
+To obtain a commercial license, contact the Licensor at:
+
+  Name:  Luigi Delle
+  Email: luigidelle05@gmail.com
+
+The Licensor reserves the right to set the terms and pricing of any
+commercial license at their sole discretion. Enquiries will typically
+receive a response within 14 business days.
+
+6. Enforcement and Remedy
+--------------------------
+
+Any use of the Software in violation of this License — in particular any
+Commercial Use without a valid commercial license — automatically terminates
+Your rights under this License and constitutes copyright infringement.
+
+Upon such violation:
+  (a) Your right to use, reproduce, distribute, or modify the Software
+      under this License is immediately and automatically revoked.
+  (b) The Licensor may pursue all remedies available under applicable
+      copyright law, including injunctive relief and damages.
+  (c) As a condition of cure, the Licensor may require You to pay a
+      retroactive commercial licensing fee for the period of unauthorised
+      Commercial Use, the amount of which shall be determined by the
+      Licensor in good faith.
+  (d) Cure of the violation (including payment of any required fee and
+      execution of a prospective commercial license) does not excuse the
+      prior infringement but may be taken into account by the Licensor
+      when deciding whether to pursue legal action.
+
+7. Disclaimer of Warranties
+-----------------------------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. THE LICENSOR
+DOES NOT WARRANT THAT THE SOFTWARE WILL MEET YOUR REQUIREMENTS, THAT IT
+WILL OPERATE WITHOUT INTERRUPTION, OR THAT IT WILL BE FREE OF DEFECTS.
+
+YOU ASSUME ALL RISK ARISING FROM YOUR USE OF THE SOFTWARE.
+
+8. Limitation of Liability
+----------------------------
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+LICENSOR BE LIABLE TO YOU OR TO ANY THIRD PARTY FOR ANY INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR PUNITIVE DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, LOSS OF PROFITS, LOSS OF DATA, BUSINESS INTERRUPTION, OR COST
+OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES) ARISING OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THIS LICENSE, EVEN IF THE LICENSOR HAS BEEN
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+THE LICENSOR'S TOTAL CUMULATIVE LIABILITY TO YOU FOR ALL CLAIMS ARISING
+OUT OF OR RELATING TO THIS LICENSE OR THE SOFTWARE SHALL NOT EXCEED ONE
+HUNDRED EUROS (EUR 100).
+
+9. Governing Law
+-----------------
+
+This License shall be governed by and construed in accordance with the laws
+of Italy, without regard to its conflict-of-law provisions. Any disputes
+arising under this License shall be subject to the exclusive jurisdiction
+of the courts of Italy.
+
+10. Severability
+-----------------
+
+If any provision of this License is held to be invalid, illegal, or
+unenforceable, the remaining provisions shall continue in full force and
+effect. The invalid provision shall be replaced with a valid provision that
+most closely achieves the intent of the original provision.
+
+11. Entire Agreement
+---------------------
+
+This License constitutes the entire agreement between You and the Licensor
+with respect to the Software and supersedes all prior or contemporaneous
+understandings, agreements, representations, and warranties regarding the
+Software, whether written or oral, except for any separate written
+commercial license agreement executed between the parties.
+
+---
+
+END OF NONCOMMERCIAL PUBLIC LICENSE v1.0
