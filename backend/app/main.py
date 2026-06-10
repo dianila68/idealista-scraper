@@ -4,16 +4,22 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import settings
+from app.core.database import engine
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 log = structlog.get_logger()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    session_factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+    start_scheduler(session_factory)
     log.info("startup", env=settings.log_level)
     yield
+    stop_scheduler()
     log.info("shutdown")
 
 
