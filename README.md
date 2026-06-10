@@ -1,13 +1,12 @@
 # idealista-scraper
 
-> A self-hosted, three-tier real estate aggregator for the Italian property market.
-> Scrapes Idealista.it, Immobiliare.it, and Subito.it, unifies listings through a
-> platform-agnostic filter model, and delivers real-time push notifications to an
-> Android companion app.
+> Self-hosted backend that scrapes Italian real estate platforms, normalises
+> listings into a unified schema, evaluates them against saved filter profiles,
+> and delivers push notifications to any client that registers a device token.
 
 ![License](https://img.shields.io/badge/license-Noncommercial%20Public%20v1.0-blue)
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Backend-green)
-![Stack](https://img.shields.io/badge/stack-Python%20%2B%20FastAPI%20%7C%20Kotlin-informational)
+![Stack](https://img.shields.io/badge/stack-Python%203.11%20%2B%20FastAPI-informational)
+![Platforms](https://img.shields.io/badge/sources-Idealista%20%7C%20Immobiliare.it%20%7C%20Subito.it-green)
 
 ---
 
@@ -15,20 +14,16 @@
 
 - [Overview](#overview)
 - [Architecture](#architecture)
-- [Features](#features)
+- [API Contract](#api-contract)
+  - [Canonical Listing Schema](#canonical-listing-schema)
+  - [Filter Schema](#filter-schema)
+  - [Platform Query Mapping](#platform-query-mapping)
+  - [REST Endpoints](#rest-endpoints)
 - [Supported Platforms](#supported-platforms)
 - [Tech Stack](#tech-stack)
 - [Repository Structure](#repository-structure)
 - [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Backend Setup](#backend-setup)
-  - [Android App Setup](#android-app-setup)
-  - [Notification Setup](#notification-setup)
 - [Configuration](#configuration)
-  - [Environment Variables](#environment-variables)
-  - [Filter Reference](#filter-reference)
-  - [Platform Query Mapping](#platform-query-mapping)
-- [API Reference](#api-reference)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -36,304 +31,144 @@
 
 ## Overview
 
-**idealista-scraper** solves a common frustration: Italian property portals each have their
-own search interface, alert systems, and result formats. This project provides a single,
-unified layer that:
+**idealista-scraper** is a backend service. It exposes a versioned REST API
+that any client (mobile app, web dashboard, CLI) can consume. The backend:
 
-1. Periodically scrapes multiple portals on your behalf.
-2. Normalises every listing into a common schema.
-3. Evaluates each listing against your saved filter profiles.
-4. Pushes a notification to your phone the moment a matching listing appears.
+1. Periodically scrapes Idealista.it, Immobiliare.it, and Subito.it.
+2. Normalises every listing into a canonical JSON schema.
+3. Deduplicates listings across platforms.
+4. Evaluates listings against user-defined filter profiles.
+5. Dispatches FCM push notifications for new matches.
+6. Exposes all data via a documented REST API (`/api/v1/`).
 
-All components are self-hosted. No data leaves your infrastructure except for the FCM
-push payload sent through Google's servers.
+All client concerns (UI, offline cache, notification rendering) live in
+separate client repositories that consume this API.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         USER DEVICE (Android)                       │
-│                                                                     │
-│   ┌──────────────────────────────────────────────────────────────┐  │
-│   │                  idealista-scraper App                       │  │
-│   │                                                              │  │
-│   │  ┌────────────┐  ┌─────────────┐  ┌──────────────────────┐  │  │
-│   │  │  Filter UI │  │ Listing Feed│  │  Notification Prefs  │  │  │
-│   │  └─────┬──────┘  └──────┬──────┘  └──────────┬───────────┘  │  │
-│   └────────┼────────────────┼─────────────────────┼─────────────┘  │
-│            │  REST/JSON      │  REST/JSON           │ FCM Token Reg  │
-└────────────┼────────────────┼─────────────────────┼────────────────┘
-             │                │                      │
-             ▼                ▼                      ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        BACKEND SERVER                               │
-│                                                                     │
-│  ┌──────────────┐   ┌───────────────┐   ┌────────────────────────┐ │
-│  │  Filter API  │   │  Listings API │   │   Notification Service │ │
-│  │  (CRUD)      │   │  (aggregated) │   │   (FCM dispatcher)     │ │
-│  └──────┬───────┘   └───────┬───────┘   └──────────┬─────────────┘ │
-│         │                   │                       │               │
-│  ┌──────▼───────────────────▼───────────────────────▼─────────────┐ │
-│  │                     Scraper Engine                              │ │
-│  │                                                                 │ │
-│  │  ┌──────────────┐ ┌────────────────────┐ ┌──────────────────┐  │ │
-│  │  │ Idealista.it │ │  Immobiliare.it     │ │   Subito.it      │  │ │
-│  │  │  Adapter     │ │  Adapter            │ │   Adapter        │  │ │
-│  │  └──────┬───────┘ └─────────┬──────────┘ └────────┬─────────┘  │ │
-│  └─────────┼───────────────────┼─────────────────────┼────────────┘ │
-│            │                   │                      │              │
-│  ┌─────────▼───────────────────▼──────────────────────▼────────────┐ │
-│  │                  Unified Listing Store (PostgreSQL)              │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
-             │
-             ▼  (outbound only)
-┌────────────────────────┐
-│  Firebase Cloud        │
-│  Messaging (FCM)       │
-└────────────────────────┘
+  External Clients
+  (Android app, web dashboard, CLI tools)
+         │
+         │  Bearer JWT · REST/JSON
+         ▼
+┌──────────────────────────────────────────────────┐
+│                  FastAPI Backend                  │
+│                                                  │
+│  ┌────────────┐  ┌─────────────┐  ┌───────────┐ │
+│  │  /filters  │  │  /listings  │  │  /devices │ │
+│  │  /auth     │  │  /sources   │  │  /users   │ │
+│  └─────┬──────┘  └──────┬──────┘  └─────┬─────┘ │
+│        └────────────────┼───────────────┘        │
+│                         │                        │
+│              ┌──────────▼──────────┐             │
+│              │   Scraper Engine    │             │
+│              │                     │             │
+│   ┌──────────┴──┐ ┌────────────┐ ┌─┴──────────┐ │
+│   │ Idealista   │ │Immobiliare │ │  Subito.it  │ │
+│   │  Adapter    │ │  Adapter   │ │  Adapter   │ │
+│   └─────────────┘ └────────────┘ └────────────┘ │
+│              │                                   │
+│   ┌──────────▼──────────────────────────────┐   │
+│   │         Deduplication Service            │   │
+│   └──────────┬──────────────────────────────┘   │
+│              │                                   │
+│   ┌──────────▼──────────────────────────────┐   │
+│   │      Notification Dispatcher (FCM)       │   │
+│   └─────────────────────────────────────────┘   │
+└──────────────────────┬───────────────────────────┘
+                       │
+         ┌─────────────┴──────────────┐
+         │                            │
+   ┌─────▼──────┐              ┌──────▼──────┐
+   │ PostgreSQL │              │    Redis     │
+   │ (listings, │              │ (job queue,  │
+   │  filters,  │              │  dedup cache)│
+   │  users)    │              └─────────────┘
+   └────────────┘
+         │  (outbound only)
+   ┌─────▼──────────────┐
+   │ Firebase Cloud     │
+   │ Messaging (FCM)    │
+   └────────────────────┘
 ```
 
 ---
 
-## Features
+## API Contract
 
-### Scraper Engine
-- Concurrent scraping of Idealista.it, Immobiliare.it, and Subito.it
-- Configurable scrape interval per source (cron-based via APScheduler)
-- Respectful request throttling and optional proxy rotation
-- Deduplication across sources using a content-hash fingerprint
-- Automatic retry with exponential back-off on HTTP errors
-- Incremental scraping: only new or changed listings are stored
+The API contract is the authoritative interface between this backend and any
+client. Clients must implement against these schemas — not against internal
+implementation details.
 
-### Filter System
-- Platform-agnostic filter model (see [Filter Reference](#filter-reference))
-- Filters are stored server-side and keyed to a user profile
-- Each filter profile is independently scheduled and evaluated
-- Compound filters on any combination of fields
+### Canonical Listing Schema
 
-### Unified Listing Schema
-- Canonical fields: `id`, `source`, `url`, `title`, `price`, `city`, `zone`,
-  `size_sqm`, `rooms`, `bathrooms`, `floor`, `property_type`, `published_at`,
-  `images[]`, `features[]`, `raw`
-- The `raw` field preserves the original platform payload for debugging
-
-### Smart Suggestions
-- **Roommate / cost-sharing suggestions**: when filtering for a single room, the app surfaces a "Split with someone, pay less" section showing full apartments in the same zone at a similar total budget — making it easy to see when sharing saves money
-- Suggestion cards display the estimated per-person cost (price ÷ 2) prominently
-- Suggestions are optional and dismissible per filter
-
-### Android App
-- Configure and manage filter profiles
-- Browse the aggregated listing feed with infinite scroll
-- Open original listing in-browser with one tap
-- Manage notification subscriptions per filter profile
-- Offline-capable: listings cached locally with Room
-
-### Notification System
-- Push notifications via Firebase Cloud Messaging (FCM)
-- Payload includes: listing thumbnail URL, price, zone, size, direct link
-- Per-filter notification toggle (mute without deleting a filter)
-- Digest mode: batch notifications for high-frequency filters
-- Notification history retained in-app for 30 days
-
----
-
-## Supported Platforms
-
-| Portal            | Rent | Sale | Notes                                            |
-|-------------------|------|------|--------------------------------------------------|
-| Idealista.it      | Yes  | Yes  | Primary target; requires JS rendering (Playwright) |
-| Immobiliare.it    | Yes  | Yes  | REST-like API available; standard HTTP scraping  |
-| Subito.it         | Yes  | Yes  | Classifieds; noisier data set; standard HTTP     |
-
----
-
-## Tech Stack
-
-### Backend
-| Layer            | Technology                                      |
-|------------------|-------------------------------------------------|
-| Language         | Python 3.11+                                    |
-| Web Framework    | FastAPI                                         |
-| Scraping         | httpx + BeautifulSoup4 / Playwright             |
-| Task Scheduling  | APScheduler                                     |
-| Database         | PostgreSQL + Redis (job queue / dedup cache)    |
-| ORM              | SQLAlchemy 2.x + Alembic                        |
-| Push Dispatch    | firebase-admin (FCM HTTP v1 API)                |
-| Containerisation | Docker + Docker Compose                         |
-
-### Android App
-| Layer            | Technology                                      |
-|------------------|-------------------------------------------------|
-| Language         | Kotlin                                          |
-| UI               | Jetpack Compose                                 |
-| Architecture     | MVVM + Unidirectional Data Flow                 |
-| Networking       | Retrofit 2 + OkHttp                             |
-| Local Storage    | Room (SQLite)                                   |
-| Push             | Firebase Messaging SDK                          |
-| Image Loading    | Coil                                            |
-| DI               | Hilt                                            |
-
----
-
-## Repository Structure
-
-```
-idealista-scraper/
-├── backend/
-│   ├── app/
-│   │   ├── api/            # FastAPI routers (filters, listings, devices, auth)
-│   │   ├── scrapers/       # Per-platform adapter implementations
-│   │   │   ├── base.py         # Abstract BaseScraper interface
-│   │   │   ├── idealista.py
-│   │   │   ├── immobiliare.py
-│   │   │   └── subito.py
-│   │   ├── models/         # SQLAlchemy ORM models
-│   │   ├── schemas/        # Pydantic request/response schemas
-│   │   ├── services/       # Business logic (filter eval, dedup, FCM)
-│   │   ├── scheduler/      # APScheduler job definitions
-│   │   └── core/           # Config, DB session, logging
-│   ├── alembic/            # Database migrations
-│   ├── tests/
-│   ├── Dockerfile
-│   └── requirements.txt
-├── android/
-│   ├── app/
-│   │   └── src/main/
-│   │       ├── java/com/idealista/scraper/
-│   │       │   ├── ui/             # Composable screens and ViewModels
-│   │       │   ├── data/           # Repository, Room DAOs, Retrofit service
-│   │       │   ├── domain/         # Use cases and domain models
-│   │       │   └── notifications/  # FCM service, notification builder
-│   │       └── res/
-│   └── build.gradle.kts
-├── docker-compose.yml
-├── .env.example
-├── .gitignore
-├── LICENSE
-└── README.md
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Docker 24+ and Docker Compose v2
-- Android Studio Hedgehog (2023.1.1) or newer
-- A Firebase project with Cloud Messaging enabled (free tier is sufficient)
-- Python 3.11+ (for local development without Docker)
-
-### Backend Setup
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/dianila68/idealista-scraper.git
-   cd idealista-scraper
-   ```
-
-2. Copy and edit the environment file:
-   ```bash
-   cp .env.example .env
-   # Edit .env — see Environment Variables section below
-   ```
-
-3. Place your Firebase service-account JSON at:
-   ```
-   backend/app/core/firebase-service-account.json
-   ```
-   This file is listed in `.gitignore` — never commit it.
-
-4. Start all services:
-   ```bash
-   docker compose up -d
-   ```
-
-5. Run database migrations:
-   ```bash
-   docker compose exec backend alembic upgrade head
-   ```
-
-6. The API is now available at `http://localhost:8000`.
-   Interactive docs: `http://localhost:8000/docs`
-
-### Android App Setup
-
-1. Open the `android/` directory in Android Studio.
-2. In the Firebase Console, download `google-services.json` for your project
-   and place it at `android/app/google-services.json`.
-3. In `android/app/src/main/res/values/config.xml`, set your backend URL:
-   ```xml
-   <string name="backend_base_url">http://<your-server-ip>:8000</string>
-   ```
-4. Build and run on a device or emulator (API level 26+).
-
-### Notification Setup
-
-1. In the Firebase Console, enable **Cloud Messaging** for your project.
-2. Download the server service-account JSON (Project Settings → Service Accounts
-   → Generate new private key) and place it in the backend as described above.
-3. The backend automatically registers device tokens when the Android app
-   calls `POST /api/v1/devices/register`.
-4. Notifications are dispatched after each scrape cycle whenever a new listing
-   matches a saved filter.
-
----
-
-## Configuration
-
-### Environment Variables
-
-All configuration is read from environment variables (`.env` file or host environment).
-
-| Variable                   | Default                    | Description                                      |
-|----------------------------|----------------------------|--------------------------------------------------|
-| `DATABASE_URL`             | —                          | PostgreSQL DSN (`postgresql+asyncpg://...`)      |
-| `REDIS_URL`                | `redis://redis:6379/0`     | Redis DSN for job queue and dedup cache          |
-| `SCRAPE_INTERVAL_MINUTES`  | `30`                       | Global scrape interval in minutes                |
-| `IDEALISTA_INTERVAL`       | *(inherits global)*        | Override interval for Idealista only             |
-| `IMMOBILIARE_INTERVAL`     | *(inherits global)*        | Override interval for Immobiliare only           |
-| `SUBITO_INTERVAL`          | *(inherits global)*        | Override interval for Subito only                |
-| `REQUEST_DELAY_SECONDS`    | `3`                        | Minimum delay between requests to the same host  |
-| `PROXY_LIST`               | —                          | Comma-separated `http://host:port` proxy URLs    |
-| `FIREBASE_CREDENTIALS`     | `backend/app/core/firebase-service-account.json` | Path to FCM service account |
-| `SECRET_KEY`               | —                          | JWT signing secret (min 32 chars)                |
-| `LOG_LEVEL`                | `INFO`                     | Python log level                                 |
-
-### Filter Reference
-
-A filter profile is a JSON object stored server-side. All fields are optional;
-omitting a field means "no constraint on this dimension".
+Every listing, regardless of source platform, is normalised into this shape:
 
 ```json
 {
+  "id": "uuid",
+  "source": "idealista | immobiliare | subito",
+  "source_id": "platform-native-id",
+  "url": "https://...",
+  "title": "string",
+  "price": 1200.00,
+  "currency": "EUR",
+  "listing_type": "rent | sale",
+  "property_type": "apartment | house | room | studio | ...",
+  "city": "Milano",
+  "zone": "Navigli",
+  "size_sqm": 65,
+  "rooms": 2,
+  "bathrooms": 1,
+  "floor": 3,
+  "total_floors": 5,
+  "features": ["elevator", "parking", "balcony"],
+  "images": ["https://cdn.example.com/img1.jpg"],
+  "published_at": "2024-01-15T10:30:00Z",
+  "scraped_at": "2024-01-15T12:00:00Z",
+  "content_hash": "sha256hex"
+}
+```
+
+Fields absent in the source platform are `null`. The `raw` field (source
+platform's original payload) is available at `GET /listings/{id}` for
+authenticated users only.
+
+### Filter Schema
+
+A filter profile is the core user-defined query. All fields are optional;
+omitting a field means no constraint on that dimension.
+
+```json
+{
+  "id": "uuid",
   "name": "Milan 2BR under 1500",
   "listing_type": "rent",
   "property_type": ["apartment"],
   "locations": [
     { "city": "Milano", "zones": ["Navigli", "Isola", "Porta Romana"] }
   ],
-  "price": { "min": null, "max": 1500, "currency": "EUR" },
+  "price": { "min": null, "max": 1500 },
   "size_sqm": { "min": 50, "max": null },
   "rooms": { "min": 2, "max": null },
   "bathrooms": { "min": 1, "max": null },
   "floor": { "min": 1, "exclude_ground": true },
-  "features": ["elevator", "parking"],
-  "exclude_agencies": false,
+  "features": ["elevator"],
   "sources": ["idealista", "immobiliare", "subito"],
   "notify": true,
-  "notify_digest": false
+  "notify_digest": false,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T00:00:00Z"
 }
 ```
 
 ### Platform Query Mapping
 
-The abstract filter model is translated into each platform's native query parameters
-by its adapter at scrape time.
+The abstract filter is translated to each platform's native query parameters
+by its adapter. This table is the canonical reference for adapter contributors.
 
 | Abstract Field     | Idealista param(s)            | Immobiliare param(s)     | Subito param(s)          |
 |--------------------|-------------------------------|--------------------------|--------------------------|
@@ -350,85 +185,212 @@ by its adapter at scrape time.
 | `exclude_ground`   | `conAscensor` (indirect)      | `escludi_piano_terra`    | —                        |
 | `features`         | `caracteristicas[]`           | `caratteristiche[]`      | `features[]`             |
 
+### REST Endpoints
+
+Base path: `/api/v1/`. Authentication: `Authorization: Bearer <jwt>`.
+
+Full interactive documentation at `/docs` (Swagger UI) and `/redoc`.
+
+#### Auth
+
+| Method | Path                      | Auth | Description                  |
+|--------|---------------------------|------|------------------------------|
+| POST   | `/auth/register`          | —    | Create account               |
+| POST   | `/auth/token`             | —    | Login → JWT tokens           |
+| POST   | `/auth/refresh`           | —    | Rotate refresh token         |
+| POST   | `/auth/resend-verification` | — | Resend email verification    |
+| GET    | `/auth/verify`            | —    | Verify email with token      |
+
+#### Users
+
+| Method | Path          | Auth | Description                    |
+|--------|---------------|------|--------------------------------|
+| GET    | `/users/me`   | Yes  | Get own profile                |
+| DELETE | `/users/me`   | Yes  | Delete account + all data      |
+
+#### Filters
+
+| Method | Path              | Auth | Description                    |
+|--------|-------------------|------|--------------------------------|
+| GET    | `/filters`        | Yes  | List own filter profiles       |
+| POST   | `/filters`        | Yes  | Create filter                  |
+| GET    | `/filters/{id}`   | Yes  | Get one filter                 |
+| PUT    | `/filters/{id}`   | Yes  | Replace filter                 |
+| PATCH  | `/filters/{id}`   | Yes  | Partial update                 |
+| DELETE | `/filters/{id}`   | Yes  | Delete filter                  |
+
+#### Listings
+
+| Method | Path                  | Auth | Description                              |
+|--------|-----------------------|------|------------------------------------------|
+| GET    | `/listings`           | Yes  | Paginated feed (cursor-based)            |
+| GET    | `/listings/{id}`      | Yes  | Full listing detail (includes `raw`)     |
+| GET    | `/listings/sources`   | Yes  | Platform status + last scrape time       |
+
+Query params for `GET /listings`:
+- `filter_id` — scope to a saved filter
+- `source` — `idealista` / `immobiliare` / `subito`
+- `cursor` / `per_page` (default 20, max 100)
+- `sort` — `price_asc`, `price_desc`, `newest` (default)
+- `suggest_roommate` — `true`: include apartment suggestions for single-room searches
+
+#### Devices
+
+| Method | Path                  | Auth | Description                         |
+|--------|-----------------------|------|-------------------------------------|
+| POST   | `/devices/register`   | Yes  | Register/refresh FCM device token   |
+| DELETE | `/devices/{token}`    | Yes  | Unregister device token             |
+
 ---
 
-## API Reference
+## Supported Platforms
 
-All endpoints are prefixed with `/api/v1`. Authentication uses Bearer JWT tokens.
+| Portal            | Rent | Sale | Scraping Method                         |
+|-------------------|------|------|-----------------------------------------|
+| Idealista.it      | Yes  | Yes  | Playwright (JS rendering required)      |
+| Immobiliare.it    | Yes  | Yes  | httpx + JSON API                        |
+| Subito.it         | Yes  | Yes  | httpx + HTML/JSON; extra noise filtering|
 
-### Filters
+---
 
-| Method | Path              | Description                          |
-|--------|-------------------|--------------------------------------|
-| GET    | `/filters`        | List all filter profiles for caller  |
-| POST   | `/filters`        | Create a new filter profile          |
-| GET    | `/filters/{id}`   | Get a single filter profile          |
-| PUT    | `/filters/{id}`   | Replace a filter profile             |
-| PATCH  | `/filters/{id}`   | Update fields of a filter profile    |
-| DELETE | `/filters/{id}`   | Delete a filter profile              |
+## Tech Stack
 
-### Listings
+| Layer              | Technology                                        |
+|--------------------|---------------------------------------------------|
+| Language           | Python 3.11+                                      |
+| Web framework      | FastAPI + Uvicorn                                 |
+| Async ORM          | SQLAlchemy 2.x (async) + asyncpg                  |
+| Migrations         | Alembic                                           |
+| Validation         | Pydantic v2                                       |
+| Auth               | python-jose (JWT) + passlib (bcrypt)              |
+| Scraping           | httpx (Immobiliare, Subito) + Playwright (Idealista) |
+| Scheduling         | APScheduler                                       |
+| Cache / Queue      | Redis                                             |
+| Push notifications | firebase-admin (FCM HTTP v1)                      |
+| Testing            | pytest + pytest-asyncio + httpx (async test client)|
+| Linting / Types    | ruff + mypy                                       |
+| Containerisation   | Docker + Docker Compose                           |
 
-| Method | Path                  | Description                                              |
-|--------|-----------------------|----------------------------------------------------------|
-| GET    | `/listings`           | Paginated listing feed (optionally scoped to a filter)   |
-| GET    | `/listings/{id}`      | Single listing detail                                    |
-| GET    | `/listings/sources`   | Supported source platforms and their status              |
+---
 
-### Devices
+## Repository Structure
 
-| Method | Path                    | Description                               |
-|--------|-------------------------|-------------------------------------------|
-| POST   | `/devices/register`     | Register or refresh an FCM device token   |
-| DELETE | `/devices/{token}`      | Unregister a device token                 |
+```
+idealista-scraper/
+├── backend/
+│   ├── app/
+│   │   ├── api/              # FastAPI routers
+│   │   │   └── v1/
+│   │   │       ├── auth.py
+│   │   │       ├── users.py
+│   │   │       ├── filters.py
+│   │   │       ├── listings.py
+│   │   │       └── devices.py
+│   │   ├── core/             # Config, DB session, security
+│   │   │   ├── config.py
+│   │   │   ├── database.py
+│   │   │   └── security.py
+│   │   ├── models/           # SQLAlchemy ORM models
+│   │   ├── schemas/          # Pydantic schemas (the API contract)
+│   │   │   ├── listing.py
+│   │   │   ├── filter.py
+│   │   │   ├── user.py
+│   │   │   └── device.py
+│   │   ├── scrapers/         # Platform adapters
+│   │   │   ├── base.py
+│   │   │   ├── idealista.py
+│   │   │   ├── immobiliare.py
+│   │   │   └── subito.py
+│   │   ├── services/         # Business logic
+│   │   │   ├── dedup.py
+│   │   │   ├── filter_eval.py
+│   │   │   └── notifications.py
+│   │   ├── scheduler/        # APScheduler job definitions
+│   │   └── main.py
+│   ├── alembic/
+│   ├── tests/
+│   │   ├── fixtures/         # Recorded HTTP responses (no live network in CI)
+│   │   │   ├── idealista/
+│   │   │   ├── immobiliare/
+│   │   │   └── subito/
+│   │   ├── test_auth.py
+│   │   ├── test_filters.py
+│   │   ├── test_listings.py
+│   │   └── test_scrapers.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── docs/
+│   ├── adr/                  # Architecture decision records
+│   └── scraper-research/     # Per-platform research notes
+├── .github/
+│   └── workflows/
+│       └── backend.yml
+├── docker-compose.yml
+├── .env.example
+├── .gitignore
+├── LICENSE
+└── README.md
+```
 
-### Auth
+---
 
-| Method | Path              | Description           |
-|--------|-------------------|-----------------------|
-| POST   | `/auth/register`  | Create a user account |
-| POST   | `/auth/token`     | Obtain a JWT token    |
-| POST   | `/auth/refresh`   | Refresh a JWT token   |
+## Getting Started
 
-Full OpenAPI schema is served at `/docs` (Swagger UI) and `/redoc`.
+### Prerequisites
+- Docker 24+ and Docker Compose v2
+- Python 3.11+ (for local development without Docker)
+- A Firebase project with Cloud Messaging enabled (free tier sufficient)
+
+### Setup
+
+```bash
+git clone https://github.com/dianila68/idealista-scraper.git
+cd idealista-scraper
+cp .env.example .env          # fill in your values
+# place firebase-service-account.json in backend/app/core/ (gitignored)
+docker compose up -d
+docker compose exec backend alembic upgrade head
+```
+
+API available at `http://localhost:8000` · Docs at `http://localhost:8000/docs`
+
+---
+
+## Configuration
+
+| Variable                  | Default                | Description                                     |
+|---------------------------|------------------------|-------------------------------------------------|
+| `DATABASE_URL`            | —                      | PostgreSQL DSN (`postgresql+asyncpg://...`)     |
+| `REDIS_URL`               | `redis://redis:6379/0` | Redis DSN                                       |
+| `SECRET_KEY`              | —                      | JWT signing secret (min 32 chars)               |
+| `SCRAPE_INTERVAL_MINUTES` | `30`                   | Global scrape interval                          |
+| `IDEALISTA_INTERVAL`      | *(inherits)*           | Override for Idealista                          |
+| `IMMOBILIARE_INTERVAL`    | *(inherits)*           | Override for Immobiliare                        |
+| `SUBITO_INTERVAL`         | *(inherits)*           | Override for Subito                             |
+| `REQUEST_DELAY_SECONDS`   | `3`                    | Minimum delay between requests per host         |
+| `PROXY_LIST`              | —                      | Comma-separated `http://host:port` proxy URLs   |
+| `FIREBASE_CREDENTIALS`    | `backend/app/core/firebase-service-account.json` | FCM service account path |
+| `ROOMMATE_PRICE_MULTIPLIER` | `1.8`               | Budget multiplier for roommate suggestions      |
+| `ALLOWED_ORIGINS`         | `*`                    | CORS allowed origins                            |
+| `LOG_LEVEL`               | `INFO`                 | Python log level                                |
 
 ---
 
 ## Contributing
 
-Contributions are welcome under the terms of the project license.
+See open issues at [github.com/dianila68/idealista-scraper/issues](https://github.com/dianila68/idealista-scraper/issues).
 
-1. Fork the repository and create a feature branch:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-2. Follow the coding conventions of the component you are modifying
-   (PEP 8 + type hints for Python; Kotlin official style guide for Android).
-3. Write tests. Backend: pytest. Android: JUnit 4 + Robolectric.
-4. Open a pull request against `main` with a clear description of the change
-   and the motivation behind it.
-
-**Adding a new scraper adapter:**
-- Extend `backend/app/scrapers/base.py:BaseScraper`.
-- Implement `fetch_listings(filter: FilterProfile) -> list[RawListing]`.
-- Add the platform-to-abstract field mapping to the table in this README.
-- Add integration tests using recorded HTTP fixtures (no live network in CI).
+To add a scraper adapter: extend `backend/app/scrapers/base.py:BaseScraper`,
+implement `fetch_listings()` and `map_filter()`, add recorded HTTP fixtures
+under `tests/fixtures/<platform>/`, and add the platform to the mapping table
+in this README.
 
 ---
 
 ## License
 
-Copyright (c) 2024 Luigi Delle (luigidelle05@gmail.com)
+Copyright (c) 2024 Luigi Delle — luigidelle05@gmail.com
 
-This project is released under the **Noncommercial Public License v1.0**.
-
-You are free to use, study, modify, and redistribute this software for
-**non-commercial purposes** at no charge.
-
-**Any commercial use** — including but not limited to selling the software,
-offering it as a hosted service, embedding it in a commercial product, or
-using it to generate revenue — requires a separate commercial license obtained
-from the copyright holder.
-
-See the [LICENSE](./LICENSE) file for the complete terms.
-For commercial licensing enquiries: luigidelle05@gmail.com
+**Noncommercial Public License v1.0** — free for non-commercial use.
+Commercial use requires a paid license from the copyright holder.
+See [LICENSE](./LICENSE) for full terms.
