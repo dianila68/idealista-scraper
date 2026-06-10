@@ -75,11 +75,13 @@ async def test_run_scrape_calls_scraper():
 
     fc = FilterConfig(sources=["idealista"])
 
+    mock_listing = MagicMock()
     with (
         patch("app.services.scheduler.get_scraper", return_value=mock_scraper),
-        patch("app.services.scheduler.bulk_upsert", new_callable=AsyncMock) as mock_upsert,
+        patch("app.services.scheduler.upsert_listing", new_callable=AsyncMock) as mock_upsert,
+        patch("app.services.scheduler.dispatch_new_listing", new_callable=AsyncMock),
     ):
-        mock_upsert.return_value = (1, 0)
+        mock_upsert.return_value = (mock_listing, True)
         await _run_scrape_for_filter(mock_session_factory, "filter-1", fc)
 
     mock_scraper.fetch_listings.assert_awaited_once_with(fc)
@@ -129,7 +131,7 @@ async def test_run_scrape_empty_results_skips_upsert():
 
     with (
         patch("app.services.scheduler.get_scraper", return_value=mock_scraper),
-        patch("app.services.scheduler.bulk_upsert", new_callable=AsyncMock) as mock_upsert,
+        patch("app.services.scheduler.upsert_listing", new_callable=AsyncMock) as mock_upsert,
     ):
         await _run_scrape_for_filter(mock_session_factory, "filter-1", fc)
         mock_upsert.assert_not_called()

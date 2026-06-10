@@ -12,7 +12,8 @@ from app.core.config import settings
 from app.models.filter import Filter
 from app.schemas.filter import FilterConfig
 from app.scrapers.base import available_sources, get_scraper
-from app.services.dedup import bulk_upsert
+from app.services.dedup import upsert_listing
+from app.services.notifications import dispatch_new_listing
 
 log = structlog.get_logger()
 
@@ -44,17 +45,20 @@ async def _run_scrape_for_filter(
         if not raw_listings:
             continue
 
-        pairs = [(raw, scraper.content_hash(raw)) for raw in raw_listings]
-
-        async with session_factory() as session:
-            new_count, updated_count = await bulk_upsert(session, pairs)
+        new_count = 0
+        for raw in raw_listings:
+            content_hash = scraper.content_hash(raw)
+            async with session_factory() as session:
+                listing_row, is_new = await upsert_listing(session, raw, content_hash)
+                if is_new:
+                    new_count += 1
+                    await dispatch_new_listing(session, listing_row)
 
         log.info(
             "scheduler.upserted",
             source=source,
             filter_id=filter_id,
             new=new_count,
-            updated=updated_count,
         )
 
 
