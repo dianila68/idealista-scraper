@@ -120,6 +120,11 @@ push payload sent through Google's servers.
   `images[]`, `features[]`, `raw`
 - The `raw` field preserves the original platform payload for debugging
 
+### Smart Suggestions
+- **Roommate / cost-sharing suggestions**: when filtering for a single room, the app surfaces a "Split with someone, pay less" section showing full apartments in the same zone at a similar total budget — making it easy to see when sharing saves money
+- Suggestion cards display the estimated per-person cost (price ÷ 2) prominently
+- Suggestions are optional and dismissible per filter
+
 ### Android App
 - Configure and manage filter profiles
 - Browse the aggregated listing feed with infinite scroll
