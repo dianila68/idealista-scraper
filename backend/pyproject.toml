@@ -4,7 +4,12 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
+# B008: FastAPI uses Depends() in function defaults by design
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic migration files use typing.Union/Sequence for readability
+"alembic/*" = ["UP007", "UP035", "I001"]
 
 [tool.mypy]
 python_version = "3.11"

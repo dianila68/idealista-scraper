@@ -1,10 +1,10 @@
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -47,7 +47,7 @@ async def list_listings(
         if filter_row is None or filter_row.user_id != user.id:
             raise HTTPException(status_code=404, detail="Filter not found")
         config = filter_row.config
-        _apply_filter_config(query, config)
+        query = _apply_filter_config(query, config)
 
     if source is not None:
         if source not in SOURCES:
@@ -57,8 +57,8 @@ async def list_listings(
     if cursor is not None:
         try:
             cur_time, cur_id = _decode_cursor(cursor)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid cursor")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid cursor") from exc
         query = query.where(
             (Listing.scraped_at < cur_time)
             | ((Listing.scraped_at == cur_time) & (Listing.id < cur_id))
