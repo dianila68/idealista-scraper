@@ -47,6 +47,8 @@ class ListingResponse(BaseModel):
     bathrooms: int | None
     floor: int | None
     total_floors: int | None
+    lat: float | None = None
+    lng: float | None = None
     features: list[str]
     images: list[str]
     published_at: datetime | None
@@ -54,6 +56,25 @@ class ListingResponse(BaseModel):
     content_hash: str
 
     model_config = {"from_attributes": True}
+
+
+class MapPoint(BaseModel):
+    """Minimal listing shape for the map endpoint."""
+
+    id: UUID
+    title: str | None
+    price: float | None
+    city: str | None
+    zone: str | None
+    lat: float
+    lng: float
+    url: str
+
+    model_config = {"from_attributes": True}
+
+
+class MapResponse(BaseModel):
+    listings: list[MapPoint]
 
 
 class ListingDetailResponse(ListingResponse):

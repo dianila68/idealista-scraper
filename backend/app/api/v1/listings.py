@@ -13,7 +13,14 @@ from app.models.filter import Filter
 from app.models.listing import Listing
 from app.models.user import User
 from app.schemas.filter import FilterConfig
-from app.schemas.listing import ListingDetailResponse, ListingPage, ListingResponse, SourceStatus
+from app.schemas.listing import (
+    ListingDetailResponse,
+    ListingPage,
+    ListingResponse,
+    MapPoint,
+    MapResponse,
+    SourceStatus,
+)
 
 router = APIRouter()
 
@@ -28,6 +35,42 @@ def _encode_cursor(scraped_at: datetime, listing_id: UUID) -> str:
 def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
     payload = json.loads(base64.urlsafe_b64decode(cursor.encode()))
     return datetime.fromisoformat(payload["t"]), UUID(payload["id"])
+
+
+@router.get("/map", response_model=MapResponse, tags=["map"])
+async def map_listings(
+    filter_id: UUID | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> MapResponse:
+    """Return up to 1000 geocoded listings for the map view. No auth required."""
+    query: Select[tuple[Listing]] = (
+        select(Listing)
+        .where(Listing.lat.is_not(None), Listing.lng.is_not(None))
+        .order_by(Listing.scraped_at.desc())
+        .limit(1000)
+    )
+
+    if filter_id is not None:
+        filter_row = await db.get(Filter, filter_id)
+        if filter_row is not None:
+            query = _apply_filter_config(query, filter_row.config)
+
+    result = await db.execute(query)
+    rows = result.scalars().all()
+    points = [
+        MapPoint(
+            id=r.id,
+            title=r.title,
+            price=float(r.price) if r.price is not None else None,
+            city=r.city,
+            zone=r.zone,
+            lat=float(r.lat),  # type: ignore[arg-type]
+            lng=float(r.lng),  # type: ignore[arg-type]
+            url=r.url,
+        )
+        for r in rows
+    ]
+    return MapResponse(listings=points)
 
 
 @router.get("", response_model=ListingPage)

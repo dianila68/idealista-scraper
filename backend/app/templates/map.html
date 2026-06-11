@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mappa Annunci</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+    #toolbar {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    #toolbar h1 { font-size: 1rem; font-weight: 600; }
+    #toolbar label { font-size: 0.85rem; }
+    #filter-input {
+      border: none;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 0.85rem;
+      width: 240px;
+    }
+    #apply-btn {
+      background: #e94560;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 5px 12px;
+    }
+    #apply-btn:hover { background: #c73652; }
+    #legend {
+      display: flex;
+      gap: 12px;
+      margin-left: auto;
+      font-size: 0.75rem;
+    }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    #map { flex: 1; }
+    #status {
+      background: #f0f0f0;
+      border-top: 1px solid #ccc;
+      font-size: 0.8rem;
+      padding: 4px 16px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <h1>🏠 Mappa Annunci</h1>
+    <label for="filter-input">Filter ID:</label>
+    <input id="filter-input" type="text" placeholder="UUID del filtro (opzionale)" />
+    <button id="apply-btn">Applica</button>
+    <div id="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:#2ecc71"></span>&lt; 800 €</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#f39c12"></span>800–1500 €</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span>&gt; 1500 €</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#95a5a6"></span>N/D</div>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="status">Caricamento…</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([42.0, 12.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+      maxZoom: 18,
+    }).addTo(map);
+
+    let markers = L.layerGroup().addTo(map);
+
+    function priceColor(price) {
+      if (price === null || price === undefined) return '#95a5a6';
+      if (price < 800) return '#2ecc71';
+      if (price <= 1500) return '#f39c12';
+      return '#e74c3c';
+    }
+
+    function formatPrice(price) {
+      if (price === null || price === undefined) return 'N/D';
+      return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(price);
+    }
+
+    async function loadListings(filterId) {
+      const status = document.getElementById('status');
+      status.textContent = 'Caricamento…';
+      markers.clearLayers();
+
+      let url = '/api/v1/listings/map';
+      if (filterId) url += '?filter_id=' + encodeURIComponent(filterId);
+
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const listings = data.listings || [];
+
+        listings.forEach(item => {
+          const color = priceColor(item.price);
+          const circle = L.circleMarker([item.lat, item.lng], {
+            radius: 8,
+            fillColor: color,
+            color: '#fff',
+            weight: 1.5,
+            opacity: 1,
+            fillOpacity: 0.85,
+          });
+
+          const location = [item.zone, item.city].filter(Boolean).join(', ');
+          circle.bindPopup(
+            `<strong>${item.title || 'Annuncio'}</strong><br>` +
+            `<span style="font-size:1.1em;font-weight:bold;color:${color}">${formatPrice(item.price)}</span><br>` +
+            `${location}<br>` +
+            `<a href="${item.url}" target="_blank" rel="noopener">Vedi annuncio →</a>`
+          );
+
+          markers.addLayer(circle);
+        });
+
+        status.textContent = `${listings.length} annunci visualizzati`;
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
+    }
+
+    // Read filter_id from URL query string on first load
+    const params = new URLSearchParams(window.location.search);
+    const initialFilter = params.get('filter_id') || '';
+    if (initialFilter) document.getElementById('filter-input').value = initialFilter;
+
+    document.getElementById('apply-btn').addEventListener('click', () => {
+      const filterId = document.getElementById('filter-input').value.trim();
+      loadListings(filterId);
+    });
+
+    loadListings(initialFilter);
+  </script>
+</body>
+</html>

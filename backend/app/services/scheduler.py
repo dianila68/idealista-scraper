@@ -13,6 +13,7 @@ from app.models.filter import Filter
 from app.schemas.filter import FilterConfig
 from app.scrapers.base import available_sources, get_scraper
 from app.services.dedup import upsert_listing
+from app.services.geocoder import geocode
 from app.services.notifications import dispatch_new_listing
 
 log = structlog.get_logger()
@@ -50,6 +51,11 @@ async def _run_scrape_for_filter(
             content_hash = scraper.content_hash(raw)
             async with session_factory() as session:
                 listing_row, is_new = await upsert_listing(session, raw, content_hash)
+                if listing_row.lat is None:
+                    coords = await geocode(listing_row.city, listing_row.zone)
+                    if coords is not None:
+                        listing_row.lat, listing_row.lng = coords
+                        await session.flush()
                 if is_new:
                     new_count += 1
                     await dispatch_new_listing(session, listing_row)
