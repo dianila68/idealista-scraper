@@ -64,14 +64,15 @@ async def test_run_scrape_calls_scraper():
     )
     mock_scraper = AsyncMock()
     mock_scraper.fetch_listings.return_value = [dummy_listing]
-    mock_scraper.content_hash.return_value = "deadbeef" * 8
-    mock_scraper.__aenter__ = AsyncMock(return_value=mock_scraper)
-    mock_scraper.__aexit__ = AsyncMock(return_value=False)
+    mock_scraper.content_hash = MagicMock(return_value="deadbeef" * 8)
+    mock_scraper.__aenter__.return_value = mock_scraper
+    mock_scraper.__aexit__.return_value = False
 
     mock_session = AsyncMock()
-    mock_session_factory = MagicMock()
-    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_session_cm = AsyncMock()
+    mock_session_cm.__aenter__.return_value = mock_session
+    mock_session_cm.__aexit__.return_value = False
+    mock_session_factory = MagicMock(return_value=mock_session_cm)
 
     fc = FilterConfig(sources=["idealista"])
 
@@ -92,14 +93,18 @@ async def test_run_scrape_calls_scraper():
 async def test_run_scrape_skips_unknown_source():
     """Unknown source (returned by available_sources) is skipped without raising."""
     fc = FilterConfig()  # no sources → uses available_sources()
-    mock_session_factory = MagicMock()
+
+    # session_factory is never reached in this code path (ValueError raised before it);
+    # use a plain sentinel to catch any accidental call loudly.
+    def _should_not_be_called(*_: object, **__: object) -> None:
+        raise AssertionError("session_factory must not be called in this test")
 
     with (
         patch("app.services.scheduler.available_sources", return_value=["__phantom__"]),
         patch("app.services.scheduler.get_scraper", side_effect=ValueError("No scraper")),
     ):
         # Should not raise
-        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc)
+        await _run_scrape_for_filter(_should_not_be_called, "filter-1", fc)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -107,8 +112,8 @@ async def test_run_scrape_handles_fetch_error():
     """Scraper fetch error is caught and does not propagate."""
     mock_scraper = AsyncMock()
     mock_scraper.fetch_listings.side_effect = RuntimeError("network error")
-    mock_scraper.__aenter__ = AsyncMock(return_value=mock_scraper)
-    mock_scraper.__aexit__ = AsyncMock(return_value=False)
+    mock_scraper.__aenter__.return_value = mock_scraper
+    mock_scraper.__aexit__.return_value = False
 
     fc = FilterConfig(sources=["idealista"])
     mock_session_factory = MagicMock()
@@ -123,8 +128,8 @@ async def test_run_scrape_empty_results_skips_upsert():
     """No upsert call when scraper returns empty list."""
     mock_scraper = AsyncMock()
     mock_scraper.fetch_listings.return_value = []
-    mock_scraper.__aenter__ = AsyncMock(return_value=mock_scraper)
-    mock_scraper.__aexit__ = AsyncMock(return_value=False)
+    mock_scraper.__aenter__.return_value = mock_scraper
+    mock_scraper.__aexit__.return_value = False
 
     fc = FilterConfig(sources=["idealista"])
     mock_session_factory = MagicMock()
