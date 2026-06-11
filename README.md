@@ -4,6 +4,7 @@
 > listings into a unified schema, evaluates them against saved filter profiles,
 > and delivers push notifications to any client that registers a device token.
 
+[![Backend CI](https://github.com/dianila68/idealista-scraper/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/dianila68/idealista-scraper/actions/workflows/backend.yml)
 ![License](https://img.shields.io/badge/license-Noncommercial%20Public%20v1.0-blue)
 ![Stack](https://img.shields.io/badge/stack-Python%203.11%20%2B%20FastAPI-informational)
 ![Platforms](https://img.shields.io/badge/sources-Idealista%20%7C%20Immobiliare.it%20%7C%20Subito.it-green)
