@@ -28,6 +28,8 @@ class Listing(Base):
     bathrooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_floors: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lat: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
+    lng: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     features: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     images: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     raw: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

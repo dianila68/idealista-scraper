@@ -1,19 +1,31 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import settings
+from app.core.database import engine
+from app.services.scheduler import start_scheduler, stop_scheduler
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 log = structlog.get_logger()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    session_factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+    start_scheduler(session_factory)
     log.info("startup", env=settings.log_level)
     yield
+    stop_scheduler()
     log.info("shutdown")
 
 
@@ -43,3 +55,8 @@ app.include_router(v1_router, prefix="/api/v1")
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/map", response_class=HTMLResponse, tags=["map"], include_in_schema=False)
+async def map_view(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "map.html")

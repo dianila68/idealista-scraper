@@ -1,6 +1,14 @@
 """Shared test fixtures: async test client backed by a real test database."""
 import os
 
+# Provide defaults before any app module is imported so Settings() never raises
+# at collection time when DATABASE_URL / SECRET_KEY are absent from the shell.
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://scraper:scraper@localhost:5432/scraper_test",
+)
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -22,12 +30,18 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip integration tests when the test DB is not reachable."""
+    """Skip only tests that use DB fixtures when Postgres is not reachable."""
     import asyncio
 
     import asyncpg
 
-    async def _check():
+    # Only check DB if at least one item needs it
+    db_fixtures = {"client", "db_session", "engine"}
+    needs_db = [item for item in items if db_fixtures.intersection(item.fixturenames)]
+    if not needs_db:
+        return
+
+    async def _check() -> bool:
         try:
             conn = await asyncpg.connect(
                 TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://"),
@@ -41,7 +55,7 @@ def pytest_collection_modifyitems(config, items):
     db_available = asyncio.run(_check())
     if not db_available:
         skip = pytest.mark.skip(reason="Test database not reachable — run via Docker Compose or CI")
-        for item in items:
+        for item in needs_db:
             item.add_marker(skip)
 
 
