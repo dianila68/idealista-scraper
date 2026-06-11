@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # API
     allowed_origins: str = "*"
     log_level: str = "INFO"
+    app_base_url: str = "http://localhost:8000"
 
     @property
     def proxies(self) -> list[str]:
