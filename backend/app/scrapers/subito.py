@@ -52,17 +52,21 @@ def _parse_floor(text: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _parse_location(text: str) -> tuple[str | None, str | None]:
+def _parse_location(text: str) -> tuple[str | None, str | None, str | None]:
     """
-    Parse 'Navigli, Milano (MI)' → (zone='Navigli', city='Milano').
+    Parse 'Navigli, Milano (MI)' → (city='Milano', zone='Navigli', province='MI').
     Subito location format: 'Zone, City (Province)'.
+    Returns (city, zone, province).
     """
-    # Strip province code in parentheses
-    text = re.sub(r"\s*\([A-Z]{2}\)\s*$", "", text.strip())
-    parts = [p.strip() for p in text.split(",")]
+    province: str | None = None
+    m = re.search(r"\(([A-Z]{2})\)\s*$", text.strip())
+    if m:
+        province = m.group(1)
+    clean = re.sub(r"\s*\([A-Z]{2}\)\s*$", "", text.strip())
+    parts = [p.strip() for p in clean.split(",")]
     if len(parts) >= 2:
-        return parts[-1], parts[0]
-    return text, None
+        return parts[-1], parts[0], province
+    return clean, None, province
 
 
 def _extract_info(card: object) -> dict[str, str]:
@@ -122,8 +126,9 @@ def parse_search_page(html: str, listing_type: str = "rent") -> list[RawListing]
         loc_tag = body.find(class_="item-card__location")
         city: str | None = None
         zone: str | None = None
+        province: str | None = None
         if loc_tag:
-            city, zone = _parse_location(loc_tag.get_text(strip=True))
+            city, zone, province = _parse_location(loc_tag.get_text(strip=True))
 
         img_tag = body.find("img", class_="item-card__img")
         images: list[str] = []
@@ -144,6 +149,8 @@ def parse_search_page(html: str, listing_type: str = "rent") -> list[RawListing]
                 property_type="apartment",
                 city=city,
                 zone=zone,
+                location_precision="zone",  # Subito gives zone+city but no street
+                province=province,
                 size_sqm=size_sqm,
                 rooms=rooms,
                 bathrooms=bathrooms,
@@ -199,6 +206,29 @@ class SubitoScraper(BaseScraper):
             path = path.rstrip("/") + f"/?o={page}"
 
         return _BASE_URL + path, listing_type
+
+    def normalize(self, raw_data: dict) -> RawListing:
+        """Convert a parsed Subito card dict into a RawListing."""
+        city, zone, province = _parse_location(raw_data.get("location_text", ""))
+        return RawListing(
+            source="subito",
+            source_id=str(raw_data.get("source_id", "")),
+            url=raw_data.get("url", ""),
+            title=raw_data.get("title"),
+            price=_parse_price(raw_data.get("price_text", "")) if raw_data.get("price_text") else None,
+            listing_type=raw_data.get("listing_type"),
+            property_type="apartment",
+            city=city,
+            zone=zone,
+            location_precision="zone",
+            province=province,
+            size_sqm=raw_data.get("size_sqm"),
+            rooms=raw_data.get("rooms"),
+            bathrooms=raw_data.get("bathrooms"),
+            floor=raw_data.get("floor"),
+            images=raw_data.get("images", []),
+            raw=raw_data,
+        )
 
     async def fetch_listings(self, fc: FilterConfig) -> list[RawListing]:
         results: list[RawListing] = []

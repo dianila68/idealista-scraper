@@ -69,6 +69,10 @@
       <div class="legend-item"><span class="legend-dot" style="background:#f39c12"></span>800–1500 €</div>
       <div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span>&gt; 1500 €</div>
       <div class="legend-item"><span class="legend-dot" style="background:#95a5a6"></span>N/D</div>
+      <div class="legend-item">
+        <span class="legend-dot" style="background:transparent;border:2px solid #555"></span>
+        Posizione approssimativa
+      </div>
     </div>
   </div>
   <div id="map"></div>
@@ -112,20 +116,23 @@
 
         listings.forEach(item => {
           const color = priceColor(item.price);
+          // Hollow marker (no fill) for city/zone precision; filled for street-level
+          const isApprox = item.location_precision !== 'street';
           const circle = L.circleMarker([item.lat, item.lng], {
             radius: 8,
-            fillColor: color,
-            color: '#fff',
-            weight: 1.5,
+            fillColor: isApprox ? 'transparent' : color,
+            color: isApprox ? color : '#fff',
+            weight: isApprox ? 2 : 1.5,
             opacity: 1,
-            fillOpacity: 0.85,
+            fillOpacity: isApprox ? 0 : 0.85,
           });
 
           const location = [item.zone, item.city].filter(Boolean).join(', ');
+          const approxNote = isApprox ? '<br><em style="font-size:0.8em;color:#888">Posizione approssimativa</em>' : '';
           circle.bindPopup(
             `<strong>${item.title || 'Annuncio'}</strong><br>` +
             `<span style="font-size:1.1em;font-weight:bold;color:${color}">${formatPrice(item.price)}</span><br>` +
-            `${location}<br>` +
+            `${location}${approxNote}<br>` +
             `<a href="${item.url}" target="_blank" rel="noopener">Vedi annuncio →</a>`
           );
 

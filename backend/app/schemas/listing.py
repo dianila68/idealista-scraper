@@ -17,6 +17,12 @@ class RawListing(BaseModel):
     property_type: str | None = None
     city: str | None = None
     zone: str | None = None
+    # How precisely the source pinpoints the address.
+    # Drives geocoder strategy: "street" → skip zone query, use street directly;
+    # "zone" → try zone+city first; "city" → city-only geocode.
+    location_precision: str = "zone"  # "street" | "zone" | "city"
+    # ISO province code when the source provides it (e.g. "MI", "RM").
+    province: str | None = None
     size_sqm: float | None = None
     rooms: int | None = None
     bathrooms: int | None = None
@@ -69,6 +75,7 @@ class MapPoint(BaseModel):
     lat: float
     lng: float
     url: str
+    location_precision: str = "zone"
 
     model_config = {"from_attributes": True}
 
