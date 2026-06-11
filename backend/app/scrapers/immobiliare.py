@@ -143,6 +143,7 @@ def parse_search_page(html: str, listing_type: str = "rent") -> list[RawListing]
                 property_type="apartment",
                 city=city,
                 zone=zone,
+                location_precision="street",  # Immobiliare gives street address
                 size_sqm=size_sqm,
                 rooms=rooms,
                 floor=floor,
@@ -202,6 +203,28 @@ class ImmobiliareScraper(BaseScraper):
             path = path.rstrip("/") + f"/?pag={page}"
 
         return _BASE_URL + path, listing_type
+
+    def normalize(self, raw_data: dict) -> RawListing:
+        """Convert a parsed Immobiliare card dict into a RawListing."""
+        _, zone, city = _split_location(raw_data.get("location_text", ""))
+        return RawListing(
+            source="immobiliare",
+            source_id=str(raw_data.get("source_id", "")),
+            url=raw_data.get("url", ""),
+            title=raw_data.get("title"),
+            price=_parse_price(raw_data.get("price_text", "")) if raw_data.get("price_text") else None,
+            listing_type=raw_data.get("listing_type"),
+            property_type="apartment",
+            city=city,
+            zone=zone,
+            location_precision="street",
+            size_sqm=_parse_sqm(raw_data.get("size_text", "")) if raw_data.get("size_text") else None,
+            rooms=_parse_rooms(raw_data.get("rooms_text", "")) if raw_data.get("rooms_text") else None,
+            floor=_parse_floor(raw_data.get("floor_text", "")) if raw_data.get("floor_text") else None,
+            features=raw_data.get("features", []),
+            images=raw_data.get("images", []),
+            raw=raw_data,
+        )
 
     async def fetch_listings(self, fc: FilterConfig) -> list[RawListing]:
         results: list[RawListing] = []

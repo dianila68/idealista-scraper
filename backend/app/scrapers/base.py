@@ -67,6 +67,15 @@ class BaseScraper(ABC):
     def map_filter(self, filter_config: FilterConfig) -> dict[str, str]:
         """Translate a FilterConfig into platform-native query parameters."""
 
+    @abstractmethod
+    def normalize(self, raw_data: dict) -> RawListing:
+        """Convert a single platform-native record dict into a RawListing.
+
+        Each adapter implements this to make the schema boundary explicit.
+        fetch_listings() should call normalize() per record so the conversion
+        step is testable in isolation without an HTTP layer.
+        """
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),

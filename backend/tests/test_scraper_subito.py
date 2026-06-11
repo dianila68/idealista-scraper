@@ -53,21 +53,24 @@ def test_parse_floor_basement():
 
 
 def test_parse_location_full():
-    city, zone = _parse_location("Navigli, Milano (MI)")
+    city, zone, province = _parse_location("Navigli, Milano (MI)")
     assert city == "Milano"
     assert zone == "Navigli"
+    assert province == "MI"
 
 
 def test_parse_location_no_province():
-    city, zone = _parse_location("Trastevere, Roma")
+    city, zone, province = _parse_location("Trastevere, Roma")
     assert city == "Roma"
     assert zone == "Trastevere"
+    assert province is None
 
 
 def test_parse_location_single():
-    city, zone = _parse_location("Milano")
+    city, zone, province = _parse_location("Milano")
     assert city == "Milano"
     assert zone is None
+    assert province is None
 
 
 # ── Full page parse ───────────────────────────────────────────────────────────
@@ -128,6 +131,18 @@ def test_parse_page_zones():
     assert listings[0].zone == "Navigli"
     assert listings[1].zone == "Trastevere"
     assert listings[2].zone == "Chiaia"
+
+
+def test_parse_page_precision():
+    listings = parse_search_page(_fixture("search_rent.html"))
+    assert all(item.location_precision == "zone" for item in listings)
+
+
+def test_parse_page_province():
+    listings = parse_search_page(_fixture("search_rent.html"))
+    assert listings[0].province == "MI"
+    assert listings[1].province == "RM"
+    assert listings[2].province == "NA"
 
 
 def test_parse_page_images():

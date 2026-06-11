@@ -15,6 +15,9 @@ class _StubScraper(BaseScraper):
     def map_filter(self, filter_config: FilterConfig) -> dict[str, str]:
         return {}
 
+    def normalize(self, raw_data: dict) -> RawListing:
+        return RawListing(source="_stub_", source_id=str(raw_data.get("id", "")), url="")
+
 
 def _raw(**kwargs) -> RawListing:
     defaults = dict(

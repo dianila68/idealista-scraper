@@ -52,7 +52,8 @@ async def _run_scrape_for_filter(
             async with session_factory() as session:
                 listing_row, is_new = await upsert_listing(session, raw, content_hash)
                 if listing_row.lat is None:
-                    coords = await geocode(listing_row.city, listing_row.zone)
+                    precision = getattr(listing_row, "location_precision", "zone")
+                    coords = await geocode(listing_row.city, listing_row.zone, precision)
                     if coords is not None:
                         listing_row.lat, listing_row.lng = coords
                         await session.flush()
