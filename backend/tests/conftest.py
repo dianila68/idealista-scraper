@@ -9,15 +9,29 @@ os.environ.setdefault(
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
+# passlib 1.7.4 + bcrypt 4.x+: detect_wrap_bug probes with a 255-byte password
+# that bcrypt 4+ rejects with ValueError. Patch hashpw to silently truncate so
+# the backend probe succeeds. Modern bcrypt does not have the wrap bug anyway.
+import bcrypt as _bcrypt_mod  # noqa: E402
 
-from app.core.database import get_db
-from app.main import app
-from app.models.base import Base
+_bcrypt_orig_hashpw = _bcrypt_mod.hashpw
+
+
+def _bcrypt_truncating_hashpw(password: bytes, salt: bytes) -> bytes:
+    return _bcrypt_orig_hashpw(password[:72] if len(password) > 72 else password, salt)
+
+
+_bcrypt_mod.hashpw = _bcrypt_truncating_hashpw  # type: ignore[assignment]
+
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
+
+from app.core.database import get_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.base import Base  # noqa: E402
 
 TEST_DATABASE_URL = os.getenv(
     "DATABASE_URL",

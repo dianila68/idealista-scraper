@@ -21,6 +21,9 @@ disallow_untyped_defs = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:'crypt' is deprecated:DeprecationWarning:passlib",
+]
 
 [tool.coverage.run]
 source = ["app"]

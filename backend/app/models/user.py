@@ -28,6 +28,10 @@ class User(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Rome", nullable=False)
+    password_reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_reset_expires: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     filters: Mapped[list[Filter]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     devices: Mapped[list[Device]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821

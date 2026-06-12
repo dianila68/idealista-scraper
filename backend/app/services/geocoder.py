@@ -44,22 +44,28 @@ async def _nominatim_search(query: str) -> tuple[float, float] | None:
     return float(data[0]["lat"]), float(data[0]["lon"])
 
 
-async def geocode(city: str | None, zone: str | None) -> tuple[float, float] | None:
+async def geocode(
+    city: str | None,
+    zone: str | None,
+    precision: str = "zone",
+) -> tuple[float, float] | None:
     """Return (lat, lng) for a city/zone or None if not resolvable.
 
-    Tries '{zone}, {city}, Italy' first, falls back to '{city}, Italy'.
-    Results are in-process cached to avoid redundant API calls.
+    Strategy depends on *precision*:
+    - "street" or "zone": try '{zone}, {city}, Italy' first, fall back to '{city}, Italy'
+    - "city": skip zone query and go straight to '{city}, Italy'
+    Results are in-process cached to avoid redundant Nominatim calls.
     """
     if not city:
         return None
 
-    primary_key = f"{zone or ''},{city},Italy"
+    primary_key = f"{zone or ''},{city},{precision},Italy"
     if primary_key in _cache:
         return _cache[primary_key]
 
     coords: tuple[float, float] | None = None
 
-    if zone:
+    if precision != "city" and zone:
         coords = await _nominatim_search(f"{zone}, {city}, Italy")
 
     if coords is None:
@@ -72,7 +78,11 @@ async def geocode(city: str | None, zone: str | None) -> tuple[float, float] | N
 
     _cache[primary_key] = coords
     if coords:
-        log.debug("geocoder.resolved", city=city, zone=zone, lat=coords[0], lng=coords[1])
+        log.debug(
+            "geocoder.resolved",
+            city=city, zone=zone, precision=precision,
+            lat=coords[0], lng=coords[1],
+        )
     return coords
 
 
