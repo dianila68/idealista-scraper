@@ -55,6 +55,17 @@ services:
       timeout: 3s
       retries: 10
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
   mailhog:
     image: mailhog/mailhog:latest
     ports:
