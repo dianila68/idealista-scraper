@@ -212,15 +212,28 @@ class IdealistaScraper(BaseScraper):
         """Fetch up to 3 pages of Idealista search results for the given filter."""
         results: list[RawListing] = []
         params = self.map_filter(fc)
+        prev_url: str | None = None
+
+        # Warm up the session by visiting the homepage so the server sees a
+        # realistic browsing pattern (real users don't land directly on search).
+        try:
+            warmup_resp = await self._get(_BASE_URL + "/", headers=self._HEADERS)
+            prev_url = str(warmup_resp.url)
+        except Exception:
+            prev_url = _BASE_URL + "/"
 
         for page in range(1, 4):
             url, listing_type = self._build_search_url(fc, page)
+            extra_headers = {**self._HEADERS}
+            if prev_url:
+                extra_headers["Referer"] = prev_url
             try:
-                resp = await self._get(url, params=params, headers=self._HEADERS)
+                resp = await self._get(url, params=params, headers=extra_headers)
             except Exception:
                 log.warning("idealista.fetch_failed", url=url, page=page)
                 break
 
+            prev_url = str(resp.url)
             page_listings = parse_search_page(resp.text, listing_type)
             log.debug("idealista.page_fetched", page=page, count=len(page_listings))
 

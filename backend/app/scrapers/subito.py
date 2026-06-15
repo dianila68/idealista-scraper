@@ -198,15 +198,26 @@ class SubitoScraper(BaseScraper):
     async def fetch_listings(self, fc: FilterConfig) -> list[RawListing]:
         results: list[RawListing] = []
         params = self.map_filter(fc)
+        prev_url: str | None = None
+
+        try:
+            warmup_resp = await self._get(_BASE_URL + "/", headers=self._HEADERS)
+            prev_url = str(warmup_resp.url)
+        except Exception:
+            prev_url = _BASE_URL + "/"
 
         for page in range(1, 4):
             url, listing_type = self._build_search_url(fc, page)
+            extra_headers = {**self._HEADERS}
+            if prev_url:
+                extra_headers["Referer"] = prev_url
             try:
-                resp = await self._get(url, params=params, headers=self._HEADERS)
+                resp = await self._get(url, params=params, headers=extra_headers)
             except Exception:
                 log.warning("subito.fetch_failed", url=url, page=page)
                 break
 
+            prev_url = str(resp.url)
             page_listings = parse_search_page(resp.text, listing_type)
             log.debug("subito.page_fetched", page=page, count=len(page_listings))
 
