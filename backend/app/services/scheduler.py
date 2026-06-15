@@ -31,7 +31,11 @@ async def _run_scrape_for_filter(
 
     for source in sources:
         try:
-            scraper = get_scraper(source)
+            scraper = get_scraper(
+                source,
+                request_delay=settings.request_delay_seconds,
+                proxies=settings.proxies or None,
+            )
         except ValueError:
             log.warning("scheduler.unknown_source", source=source)
             continue

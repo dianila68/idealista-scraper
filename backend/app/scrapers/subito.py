@@ -163,11 +163,6 @@ class SubitoScraper(BaseScraper):
     _HEADERS = {
         "Accept-Language": "it-IT,it;q=0.9",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-            "Version/17.0 Mobile/15E148 Safari/604.1"
-        ),
     }
 
     def map_filter(self, fc: FilterConfig) -> dict[str, str]:

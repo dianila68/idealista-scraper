@@ -169,11 +169,6 @@ class IdealistaScraper(BaseScraper):
     _HEADERS = {
         "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "User-Agent": (
-            "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Mobile Safari/537.36"
-        ),
     }
 
     def map_filter(self, fc: FilterConfig) -> dict[str, str]:
