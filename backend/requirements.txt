@@ -17,7 +17,8 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.2.1  # passlib 1.7.4 is incompatible with bcrypt >= 5.0
 
 # HTTP / scraping
-httpx==0.28.0
+httpx==0.28.0        # kept for test mock responses only; production uses curl_cffi
+curl_cffi==0.7.4     # Chrome/Firefox TLS impersonation; fixes JA3/JA4 fingerprinting
 beautifulsoup4==4.12.3
 playwright==1.49.0
 

@@ -5,16 +5,17 @@ import random
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
-import httpx
 import structlog
+from curl_cffi.requests import AsyncSession
 
 from app.schemas.filter import FilterConfig
 from app.schemas.listing import RawListing
 
 log = structlog.get_logger()
 
-# Realistic pool: Chrome (Windows/Mac/Linux), Firefox, Safari, mobile Chrome/Safari.
-# Rotated per request so repeated hits from the same IP look like different browsers.
+# Chrome-only UA pool — must stay consistent with curl_cffi's "chrome124" TLS
+# impersonation. Mixing Firefox/Safari UAs with a Chrome TLS fingerprint is a
+# detectable contradiction; UA diversity matters less than UA/TLS coherence.
 _USER_AGENTS: list[str] = [
     # Chrome Windows
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -25,17 +26,9 @@ _USER_AGENTS: list[str] = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
     # Chrome Linux
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    # Firefox
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    # Safari macOS
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
     # Mobile Chrome (Android)
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
     "Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-    # Mobile Safari (iPhone)
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
 ]
 
 # Non-rotating base headers sent on every request (UA is injected per-request).
@@ -45,9 +38,6 @@ _BASE_HEADERS: dict[str, str] = {
     "Connection": "keep-alive",
     "Cache-Control": "max-age=0",
 }
-
-# HTTP status codes that warrant a retry with back-off.
-_RETRYABLE = frozenset({429, 500, 502, 503, 504})
 
 
 class BaseScraper(ABC):
@@ -62,28 +52,28 @@ class BaseScraper(ABC):
     ) -> None:
         self._delay = request_delay
         self._proxies = proxies or []
-        self._client: httpx.AsyncClient | None = None
+        self._client: AsyncSession | None = None
 
     async def __aenter__(self) -> "BaseScraper":
-        # Rotate proxy per scrape session. For per-request rotation, callers
-        # would need separate clients; session-level rotation is a reasonable
-        # trade-off that avoids the overhead of creating a client per request.
+        # curl_cffi's AsyncSession uses Chrome's BoringSSL, producing a JA3/JA4
+        # fingerprint identical to a real Chrome browser. Session-level proxy
+        # rotation is a reasonable trade-off vs per-request client creation cost.
         proxy = random.choice(self._proxies) if self._proxies else None
-        self._client = httpx.AsyncClient(
+        self._client = AsyncSession(
             headers=_BASE_HEADERS,
-            timeout=httpx.Timeout(30.0),
-            follow_redirects=True,
+            timeout=30,
+            impersonate="chrome124",
             proxy=proxy,
         )
         return self
 
     async def __aexit__(self, *_: object) -> None:
         if self._client:
-            await self._client.aclose()
+            await self._client.close()
             self._client = None
 
     @property
-    def client(self) -> httpx.AsyncClient:
+    def client(self) -> AsyncSession:
         if self._client is None:
             raise RuntimeError("Use scraper as an async context manager")
         return self._client
@@ -96,25 +86,23 @@ class BaseScraper(ABC):
     def map_filter(self, filter_config: FilterConfig) -> dict[str, str]:
         """Translate a FilterConfig into platform-native query parameters."""
 
-    async def _get(self, url: str, **kwargs: Any) -> httpx.Response:
+    async def _get(self, url: str, **kwargs: Any) -> Any:
         """GET with jittered polite delay, UA rotation, and status-aware retry.
 
         - 429: respects Retry-After header; backs off 30 s × 2^attempt otherwise.
         - 502/503/504: backs off 10 s × 2^attempt.
         - Other 4xx: raises immediately (no retry).
-        - Transport errors: backs off 2^(attempt+1) seconds.
+        - Network errors: backs off 2^(attempt+1) seconds.
         """
         max_attempts = 4
         for attempt in range(max_attempts):
             # Polite jittered delay (± 50% of configured delay).
-            # Randomising the inter-request gap makes traffic patterns less
-            # machine-like than a fixed 3-second interval.
             jitter = self._delay * random.uniform(0.5, 1.5)
             await asyncio.sleep(jitter)
 
-            # Inject a randomly chosen UA so successive pages appear to come
-            # from different browsers. Merge with any site-specific headers
-            # passed by the adapter (Accept, Accept-Language overrides, etc.).
+            # Inject a Chrome UA that matches the curl_cffi TLS impersonation.
+            # Caller-supplied headers (site-specific Accept, etc.) take priority;
+            # the UA is only set if the caller didn't provide one.
             req_headers: dict[str, str] = dict(kwargs.get("headers") or {})
             req_headers.setdefault("User-Agent", random.choice(_USER_AGENTS))
             all_kwargs = {k: v for k, v in kwargs.items() if k != "headers"}
@@ -122,7 +110,9 @@ class BaseScraper(ABC):
 
             try:
                 response = await self.client.get(url, **all_kwargs)  # type: ignore[arg-type]
-            except httpx.TransportError as exc:
+            except Exception as exc:
+                # Catches network-level failures (curl_cffi.RequestsError,
+                # httpx.TransportError in tests, OSError, etc.).
                 if attempt >= max_attempts - 1:
                     raise
                 wait = 2 ** (attempt + 1)
