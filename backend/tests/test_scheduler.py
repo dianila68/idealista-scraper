@@ -1,4 +1,5 @@
 """Unit tests for the scheduler service — no database or network required."""
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,6 +12,8 @@ from app.services.scheduler import (
     start_scheduler,
     stop_scheduler,
 )
+
+_TEST_USER_ID = uuid.uuid4()
 
 # ── _interval_minutes ─────────────────────────────────────────────────────────
 
@@ -81,9 +84,10 @@ async def test_run_scrape_calls_scraper():
         patch("app.services.scheduler.get_scraper", return_value=mock_scraper),
         patch("app.services.scheduler.upsert_listing", new_callable=AsyncMock) as mock_upsert,
         patch("app.services.scheduler.dispatch_new_listing", new_callable=AsyncMock),
+        patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
     ):
         mock_upsert.return_value = (mock_listing, True)
-        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc)
+        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
 
     mock_scraper.fetch_listings.assert_awaited_once_with(fc)
     mock_upsert.assert_awaited_once()
@@ -94,17 +98,18 @@ async def test_run_scrape_skips_unknown_source():
     """Unknown source (returned by available_sources) is skipped without raising."""
     fc = FilterConfig()  # no sources → uses available_sources()
 
-    # session_factory is never reached in this code path (ValueError raised before it);
-    # use a plain sentinel to catch any accidental call loudly.
-    def _should_not_be_called(*_: object, **__: object) -> None:
-        raise AssertionError("session_factory must not be called in this test")
+    mock_session_cm = AsyncMock()
+    mock_session_cm.__aenter__.return_value = AsyncMock()
+    mock_session_cm.__aexit__.return_value = False
+    mock_session_factory = MagicMock(return_value=mock_session_cm)
 
     with (
         patch("app.services.scheduler.available_sources", return_value=["__phantom__"]),
         patch("app.services.scheduler.get_scraper", side_effect=ValueError("No scraper")),
+        patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
     ):
         # Should not raise
-        await _run_scrape_for_filter(_should_not_be_called, "filter-1", fc)  # type: ignore[arg-type]
+        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
 
 
 @pytest.mark.asyncio
@@ -118,9 +123,12 @@ async def test_run_scrape_handles_fetch_error():
     fc = FilterConfig(sources=["idealista"])
     mock_session_factory = MagicMock()
 
-    with patch("app.services.scheduler.get_scraper", return_value=mock_scraper):
+    with (
+        patch("app.services.scheduler.get_scraper", return_value=mock_scraper),
+        patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
+    ):
         # Should not raise
-        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc)
+        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
 
 
 @pytest.mark.asyncio
@@ -137,8 +145,9 @@ async def test_run_scrape_empty_results_skips_upsert():
     with (
         patch("app.services.scheduler.get_scraper", return_value=mock_scraper),
         patch("app.services.scheduler.upsert_listing", new_callable=AsyncMock) as mock_upsert,
+        patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
     ):
-        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc)
+        await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
         mock_upsert.assert_not_called()
 
 

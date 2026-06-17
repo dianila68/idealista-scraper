@@ -100,3 +100,10 @@ async def register_and_login(client: AsyncClient, email: str, password: str = "p
     await client.post("/api/v1/auth/register", json={"email": email, "password": password})
     resp = await client.post("/api/v1/auth/token", json={"email": email, "password": password})
     return resp.json()["access_token"]
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client: AsyncClient) -> dict:
+    """Fixture: Bearer headers for a freshly registered test user."""
+    token = await register_and_login(client, "fixture@test.com")
+    return {"Authorization": f"Bearer {token}"}

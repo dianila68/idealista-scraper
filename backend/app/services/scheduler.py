@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
+from datetime import UTC, datetime
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -9,9 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
+from app.models.credential import PlatformCredential
 from app.models.filter import Filter
 from app.schemas.filter import FilterConfig
 from app.scrapers.base import available_sources, get_scraper
+from app.services.credential_crypto import decrypt_cookies
 from app.services.dedup import upsert_listing
 from app.services.geocoder import geocode
 from app.services.notifications import dispatch_new_listing
@@ -21,25 +25,62 @@ log = structlog.get_logger()
 _scheduler: AsyncIOScheduler | None = None
 
 
+async def _load_cookies(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    platform: str,
+) -> dict[str, str]:
+    """Return the decrypted cookie jar for (user, platform), or {} if unavailable."""
+    result = await session.execute(
+        select(PlatformCredential).where(
+            PlatformCredential.user_id == user_id,
+            PlatformCredential.platform == platform,
+            PlatformCredential.login_status == "ok",
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None or row.cookies_enc is None:
+        return {}
+    # Treat cookies as expired if past their TTL
+    if row.cookies_expire_at and row.cookies_expire_at < datetime.now(UTC):
+        log.info("scheduler.cookies_expired", platform=platform, user_id=str(user_id))
+        row.login_status = "expired"
+        await session.commit()
+        return {}
+    try:
+        return decrypt_cookies(row.cookies_enc, str(user_id), platform)
+    except Exception as exc:
+        log.warning("scheduler.cookies_decrypt_failed", platform=platform, exc=str(exc))
+        return {}
+
+
 async def _run_scrape_for_filter(
     session_factory: async_sessionmaker[AsyncSession],
     filter_id: str,
     fc: FilterConfig,
+    user_id: uuid.UUID,
 ) -> None:
     """Fetch listings for one filter across all registered scrapers and upsert."""
     sources = fc.sources if fc.sources else available_sources()
 
     for source in sources:
+        # Load user's authenticated cookies for this platform (empty dict = anonymous)
+        async with session_factory() as cred_session:
+            cookies = await _load_cookies(cred_session, user_id, source)
+
         try:
             scraper = get_scraper(
                 source,
                 request_delay=settings.request_delay_seconds,
                 proxies=settings.proxies or None,
+                cookies=cookies or None,
             )
         except ValueError:
             log.warning("scheduler.unknown_source", source=source)
             continue
 
+        if cookies:
+            log.info("scheduler.authenticated_scrape", source=source, filter_id=filter_id)
         try:
             async with scraper:
                 raw_listings = await scraper.fetch_listings(fc)
@@ -85,7 +126,7 @@ async def _scrape_all_filters(session_factory: async_sessionmaker[AsyncSession])
     tasks = []
     for row in filters:
         fc = FilterConfig.model_validate(row.config)
-        tasks.append(_run_scrape_for_filter(session_factory, str(row.id), fc))
+        tasks.append(_run_scrape_for_filter(session_factory, str(row.id), fc, row.user_id))
 
     await asyncio.gather(*tasks, return_exceptions=True)
 

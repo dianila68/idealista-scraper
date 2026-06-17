@@ -49,9 +49,14 @@ class BaseScraper(ABC):
         self,
         request_delay: float = 3.0,
         proxies: list[str] | None = None,
+        cookies: dict[str, str] | None = None,
     ) -> None:
         self._delay = request_delay
         self._proxies = proxies or []
+        # Authenticated cookie jar from a real browser login; if provided the
+        # scraper operates as a logged-in user, bypassing bot detection and
+        # unlocking contact info. If None, falls back to anonymous scraping.
+        self._cookies = cookies or {}
         self._client: AsyncSession | None = None
 
     async def __aenter__(self) -> "BaseScraper":
@@ -61,11 +66,17 @@ class BaseScraper(ABC):
         proxy = random.choice(self._proxies) if self._proxies else None
         self._client = AsyncSession(
             headers=_BASE_HEADERS,
+            cookies=self._cookies or None,
             timeout=30,
             impersonate="chrome124",
             proxy=proxy,
         )
         return self
+
+    @property
+    def is_authenticated(self) -> bool:
+        """True when a user cookie jar was provided at construction."""
+        return bool(self._cookies)
 
     async def __aexit__(self, *_: object) -> None:
         if self._client:
