@@ -26,6 +26,9 @@ class RawListing(BaseModel):
     images: list[str] = []
     raw: dict = {}
     published_at: datetime | None = None
+    # Set by scrapers running with authenticated sessions
+    contact_phone: str | None = None
+    contact_email: str | None = None
 
 
 class ListingResponse(BaseModel):
@@ -54,6 +57,8 @@ class ListingResponse(BaseModel):
     published_at: datetime | None
     scraped_at: datetime
     content_hash: str
+    contact_phone: str | None = None
+    contact_email: str | None = None
 
     model_config = {"from_attributes": True}
 

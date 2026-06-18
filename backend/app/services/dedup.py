@@ -48,6 +48,8 @@ async def upsert_listing(db: AsyncSession, raw: RawListing, content_hash: str) -
             raw=raw.raw,
             published_at=raw.published_at,
             scraped_at=datetime.now(UTC),
+            contact_phone=raw.contact_phone,
+            contact_email=raw.contact_email,
         )
         db.add(listing)
         await db.flush()
@@ -55,6 +57,13 @@ async def upsert_listing(db: AsyncSession, raw: RawListing, content_hash: str) -
         return listing, True
 
     if existing.content_hash == content_hash:
+        # Even on unchanged content, update contact info if newly available
+        if raw.contact_phone and not existing.contact_phone:
+            existing.contact_phone = raw.contact_phone
+            await db.flush()
+        if raw.contact_email and not existing.contact_email:
+            existing.contact_email = raw.contact_email
+            await db.flush()
         return existing, False
 
     # Listing changed — update mutable fields
@@ -66,6 +75,10 @@ async def upsert_listing(db: AsyncSession, raw: RawListing, content_hash: str) -
     existing.images = raw.images
     existing.raw = raw.raw
     existing.scraped_at = datetime.now(UTC)
+    if raw.contact_phone:
+        existing.contact_phone = raw.contact_phone
+    if raw.contact_email:
+        existing.contact_email = raw.contact_email
     await db.flush()
     log.debug("listing.updated", source=raw.source, source_id=raw.source_id)
     return existing, False

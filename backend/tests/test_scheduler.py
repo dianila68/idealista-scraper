@@ -85,6 +85,7 @@ async def test_run_scrape_calls_scraper():
         patch("app.services.scheduler.upsert_listing", new_callable=AsyncMock) as mock_upsert,
         patch("app.services.scheduler.dispatch_new_listing", new_callable=AsyncMock),
         patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
+        patch("app.services.scheduler._refresh_session", new=AsyncMock(return_value={})),
     ):
         mock_upsert.return_value = (mock_listing, True)
         await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
@@ -107,6 +108,7 @@ async def test_run_scrape_skips_unknown_source():
         patch("app.services.scheduler.available_sources", return_value=["__phantom__"]),
         patch("app.services.scheduler.get_scraper", side_effect=ValueError("No scraper")),
         patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
+        patch("app.services.scheduler._refresh_session", new=AsyncMock(return_value={})),
     ):
         # Should not raise
         await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
@@ -126,6 +128,7 @@ async def test_run_scrape_handles_fetch_error():
     with (
         patch("app.services.scheduler.get_scraper", return_value=mock_scraper),
         patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
+        patch("app.services.scheduler._refresh_session", new=AsyncMock(return_value={})),
     ):
         # Should not raise
         await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
@@ -146,6 +149,7 @@ async def test_run_scrape_empty_results_skips_upsert():
         patch("app.services.scheduler.get_scraper", return_value=mock_scraper),
         patch("app.services.scheduler.upsert_listing", new_callable=AsyncMock) as mock_upsert,
         patch("app.services.scheduler._load_cookies", new=AsyncMock(return_value={})),
+        patch("app.services.scheduler._refresh_session", new=AsyncMock(return_value={})),
     ):
         await _run_scrape_for_filter(mock_session_factory, "filter-1", fc, _TEST_USER_ID)
         mock_upsert.assert_not_called()

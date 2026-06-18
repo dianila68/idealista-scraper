@@ -35,6 +35,9 @@ class Listing(Base):
     raw: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Populated only when the scraper runs with an authenticated session
+    contact_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("source", "source_id", name="uq_listings_source_source_id"),

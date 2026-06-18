@@ -15,10 +15,11 @@ from app.models.credential import PlatformCredential
 from app.models.filter import Filter
 from app.schemas.filter import FilterConfig
 from app.scrapers.base import available_sources, get_scraper
-from app.services.credential_crypto import decrypt_cookies
+from app.services.credential_crypto import decrypt, decrypt_cookies, encrypt_cookies
 from app.services.dedup import upsert_listing
 from app.services.geocoder import geocode
 from app.services.notifications import dispatch_new_listing
+from app.services.platform_auth import platform_login
 
 log = structlog.get_logger()
 
@@ -54,6 +55,69 @@ async def _load_cookies(
         return {}
 
 
+async def _refresh_session(
+    session_factory: async_sessionmaker[AsyncSession],
+    user_id: uuid.UUID,
+    platform: str,
+) -> dict[str, str]:
+    """Re-authenticate when cookies are expired or missing; updates DB on success."""
+    uid_str = str(user_id)
+    username = password = ""
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PlatformCredential).where(
+                PlatformCredential.user_id == user_id,
+                PlatformCredential.platform == platform,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return {}
+        try:
+            username = decrypt(row.username_enc, uid_str, platform)
+            password = decrypt(row.password_enc, uid_str, platform)
+        except Exception:
+            return {}
+
+    try:
+        cookies = await platform_login(platform, username, password)
+    except Exception as exc:
+        log.warning("scheduler.session_refresh_failed", platform=platform, user_id=uid_str, exc=str(exc))
+        async with session_factory() as session:
+            result = await session.execute(
+                select(PlatformCredential).where(
+                    PlatformCredential.user_id == user_id,
+                    PlatformCredential.platform == platform,
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row:
+                row.login_status = "failed"
+                await session.commit()
+        return {}
+
+    from datetime import timedelta
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PlatformCredential).where(
+                PlatformCredential.user_id == user_id,
+                PlatformCredential.platform == platform,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            row.cookies_enc = encrypt_cookies(cookies, uid_str, platform)
+            row.cookies_expire_at = datetime.now(UTC) + timedelta(days=7)
+            row.login_status = "ok"
+            row.last_login_at = datetime.now(UTC)
+            await session.commit()
+
+    log.info("scheduler.session_refreshed", platform=platform, user_id=uid_str)
+    return cookies
+
+
 async def _run_scrape_for_filter(
     session_factory: async_sessionmaker[AsyncSession],
     filter_id: str,
@@ -67,6 +131,10 @@ async def _run_scrape_for_filter(
         # Load user's authenticated cookies for this platform (empty dict = anonymous)
         async with session_factory() as cred_session:
             cookies = await _load_cookies(cred_session, user_id, source)
+
+        # Cookies absent (expired TTL or first run) — try to re-authenticate silently
+        if not cookies:
+            cookies = await _refresh_session(session_factory, user_id, source)
 
         try:
             scraper = get_scraper(
