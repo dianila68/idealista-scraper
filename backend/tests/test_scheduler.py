@@ -165,6 +165,7 @@ def test_start_stop_scheduler():
         mock_settings.idealista_interval = None
         mock_settings.immobiliare_interval = None
         mock_settings.subito_interval = None
+        mock_settings.fleet_enabled = False  # ensure non-fleet path
 
         scheduler = start_scheduler(mock_session_factory)
         assert scheduler.running

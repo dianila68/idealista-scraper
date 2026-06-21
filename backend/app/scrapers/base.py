@@ -50,6 +50,7 @@ class BaseScraper(ABC):
         request_delay: float = 3.0,
         proxies: list[str] | None = None,
         cookies: dict[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self._delay = request_delay
         self._proxies = proxies or []
@@ -57,6 +58,10 @@ class BaseScraper(ABC):
         # scraper operates as a logged-in user, bypassing bot detection and
         # unlocking contact info. If None, falls back to anonymous scraping.
         self._cookies = cookies or {}
+        # Per-worker browser profile overrides (Accept-Language, viewport hint,
+        # etc.) merged on top of _BASE_HEADERS so each fleet slot looks like a
+        # distinct browser instance.
+        self._extra_headers = extra_headers or {}
         self._client: AsyncSession | None = None
 
     async def __aenter__(self) -> "BaseScraper":
@@ -64,8 +69,9 @@ class BaseScraper(ABC):
         # fingerprint identical to a real Chrome browser. Session-level proxy
         # rotation is a reasonable trade-off vs per-request client creation cost.
         proxy = random.choice(self._proxies) if self._proxies else None
+        session_headers = {**_BASE_HEADERS, **self._extra_headers}
         self._client = AsyncSession(
-            headers=_BASE_HEADERS,
+            headers=session_headers,
             cookies=self._cookies or None,
             timeout=30,
             impersonate="chrome124",

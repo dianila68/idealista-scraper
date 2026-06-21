@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # Hard per-account hourly request budget.  Workers that hit this limit are
     # skipped for the current cycle so the load shifts to other accounts.
     fleet_requests_per_account_per_hour: int = 30
+    # Minutes between each source's scheduled job start time so that idealista,
+    # immobiliare, and subito do NOT all fire simultaneously — staggered traffic
+    # looks organic; 0 = no stagger (all fire together, same as non-fleet mode).
+    fleet_source_offset_minutes: int = 10
 
     # Suggestions
     roommate_price_multiplier: float = 1.8

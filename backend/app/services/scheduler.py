@@ -221,24 +221,70 @@ def _interval_minutes(source: str | None = None) -> int:
 
 
 def start_scheduler(session_factory: async_sessionmaker[AsyncSession]) -> AsyncIOScheduler:
-    """Create, configure, and start the APScheduler instance."""
+    """Create, configure, and start the APScheduler instance.
+
+    In fleet mode (``FLEET_ENABLED=true``) a separate APScheduler job is
+    registered for each known source platform.  Jobs are offset from each
+    other by ``FLEET_SOURCE_OFFSET_MINUTES`` so traffic is spread across the
+    hour rather than bursting simultaneously for all platforms.
+
+    Example with 3 sources, 10-minute offset, 30-minute base interval:
+      • idealista  fires at :00, :30
+      • immobiliare fires at :10, :40
+      • subito      fires at :20, :50
+
+    In non-fleet (default) mode a single combined job fires for all sources
+    at once — same as before.
+    """
+    from datetime import timedelta
+
+    from app.scrapers.base import available_sources as _available_sources
+    from app.services.scrape_fleet import scrape_source_for_all_filters
+
     global _scheduler  # noqa: PLW0603
 
     scheduler = AsyncIOScheduler()
 
-    interval = _interval_minutes()
-    scheduler.add_job(
-        _scrape_all_filters,
-        trigger=IntervalTrigger(minutes=interval),
-        args=[session_factory],
-        id="scrape_all_filters",
-        replace_existing=True,
-        misfire_grace_time=60,
-    )
+    if settings.fleet_enabled:
+        sources = _available_sources()
+        offset_mins = settings.fleet_source_offset_minutes
+        now = datetime.now(UTC)
+
+        for i, source in enumerate(sources):
+            interval = _interval_minutes(source)
+            start = now + timedelta(minutes=i * offset_mins)
+            scheduler.add_job(
+                scrape_source_for_all_filters,
+                trigger=IntervalTrigger(minutes=interval, start_date=start),
+                args=[session_factory, source],
+                id=f"fleet_scrape_{source}",
+                replace_existing=True,
+                misfire_grace_time=60,
+            )
+            log.info(
+                "scheduler.fleet_job_registered",
+                source=source,
+                interval_minutes=interval,
+                offset_minutes=i * offset_mins,
+            )
+    else:
+        interval = _interval_minutes()
+        scheduler.add_job(
+            _scrape_all_filters,
+            trigger=IntervalTrigger(minutes=interval),
+            args=[session_factory],
+            id="scrape_all_filters",
+            replace_existing=True,
+            misfire_grace_time=60,
+        )
 
     scheduler.start()
     _scheduler = scheduler
-    log.info("scheduler.started", interval_minutes=interval)
+    log.info(
+        "scheduler.started",
+        fleet=settings.fleet_enabled,
+        interval_minutes=_interval_minutes(),
+    )
     return scheduler
 
 

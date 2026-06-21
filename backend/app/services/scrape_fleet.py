@@ -2,19 +2,23 @@
 
 In fleet mode the scheduler distributes each filter across *all* connected
 platform accounts rather than only the filter owner's account.  Each worker
-slot holds an independent (account, proxy) pair so requests arrive from
-different IPs and session fingerprints, making per-IP and per-account
-rate-detection thresholds harder to trigger.
+slot holds an independent (account, proxy, browser-profile) triple so
+requests arrive from different IPs and session fingerprints, making
+per-IP and per-account rate-detection thresholds harder to trigger.
 
 Architecture
 ------------
-- WorkerSlot     — one (account, proxy) identity with a sliding-window
-                   request counter for per-account rate enforcement.
-- build_workers  — load all healthy credentials for a platform and pair
-                   them with proxy slots from the configured pool.
-- pick_worker    — round-robin selector that skips over-budget workers.
-- run_filter_fleet — top-level entry point called by the scheduler when
-                   fleet_enabled=True; replaces _run_scrape_for_filter.
+- BROWSER_PROFILES  — pool of realistic Accept-Language / viewport header
+                       combinations; one profile is assigned per WorkerSlot.
+- WorkerSlot        — one (account, proxy, profile) identity with a sliding-
+                       window request counter for per-account rate enforcement.
+- build_workers     — load all healthy credentials for a platform, pair them
+                       with proxies and assign browser profiles round-robin.
+- pick_worker       — round-robin selector that skips over-budget workers.
+- run_filter_fleet  — top-level entry point called by the scheduler when
+                       fleet_enabled=True; replaces _run_scrape_for_filter.
+- scrape_source_for_all_filters — per-source entry point used by the
+                       staggered per-source APScheduler jobs.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.models.credential import PlatformCredential
 from app.schemas.filter import FilterConfig
+from app.schemas.filter import FilterConfig as _FC  # noqa: F401 (re-export for scheduler)
 from app.scrapers.base import available_sources, get_scraper
 from app.services.credential_crypto import decrypt_cookies
 from app.services.dedup import upsert_listing
@@ -46,15 +51,67 @@ log = structlog.get_logger()
 _rotator_index: dict[str, int] = {}
 _rotator_lock = asyncio.Lock()
 
+# Browser profile pool — each profile is a set of HTTP headers that together
+# simulate a distinct browser instance.  Profiles differ in Accept-Language
+# (Italian region/dialect, plus varying secondary languages), Sec-CH-UA hints,
+# and DNT preference.  They are assigned round-robin to WorkerSlots so that
+# requests from different accounts also appear to come from different browser
+# installations.
+#
+# All profiles stay Chrome-only (matching curl_cffi's "chrome124" TLS
+# impersonation) — mixing browser families would create a UA/TLS contradiction
+# that anti-bot vendors detect immediately.
+BROWSER_PROFILES: list[dict[str, str]] = [
+    {
+        # Milan / Northern Italy, Chrome 124, Windows — primary profile
+        "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Sec-CH-UA": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": '"Windows"',
+        "DNT": "1",
+    },
+    {
+        # Rome / Central Italy, Chrome 123, macOS
+        "Accept-Language": "it-IT,it;q=0.9,en-GB;q=0.8,en;q=0.6",
+        "Sec-CH-UA": '"Chromium";v="123", "Google Chrome";v="123", "Not-A.Brand";v="99"',
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": '"macOS"',
+    },
+    {
+        # Naples / Southern Italy, Chrome 124, Linux
+        "Accept-Language": "it-IT,it;q=1.0,de;q=0.5",
+        "Sec-CH-UA": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": '"Linux"',
+        "DNT": "0",
+    },
+    {
+        # Turin / Northwest Italy, Chrome 122, Windows — slightly older build
+        "Accept-Language": "it-IT,it;q=0.9,fr;q=0.6,en;q=0.4",
+        "Sec-CH-UA": '"Chromium";v="122", "Google Chrome";v="122", "Not-A.Brand";v="99"',
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": '"Windows"',
+    },
+    {
+        # Bologna / Emilia-Romagna, Chrome 124, Android (mobile)
+        "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.7",
+        "Sec-CH-UA": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        "Sec-CH-UA-Mobile": "?1",
+        "Sec-CH-UA-Platform": '"Android"',
+    },
+]
+
 
 @dataclass
 class WorkerSlot:
-    """One scraper identity: a platform account paired with a proxy."""
+    """One scraper identity: a platform account paired with a proxy and browser profile."""
 
     user_id: uuid.UUID
     platform: str
     cookies: dict[str, str]
     proxy: str | None
+    # Browser fingerprint headers for this slot (Accept-Language, Sec-CH-UA, etc.)
+    profile: dict[str, str] = field(default_factory=dict)
 
     # Sliding window: timestamps of requests made in the last hour.
     _request_times: deque[datetime] = field(default_factory=deque, repr=False)
@@ -83,9 +140,10 @@ async def build_workers(
 ) -> list[WorkerSlot]:
     """Return WorkerSlots for every healthy account on *platform*.
 
-    Proxies are assigned in round-robin order.  If no proxies are configured
-    all workers share the host's IP — fleet mode still provides account
-    diversity even without a proxy pool.
+    Proxies and browser profiles are both assigned in round-robin order so that
+    each account appears to be a distinct browser installation at a distinct IP.
+    If no proxies are configured all workers share the host's IP — fleet mode
+    still provides account and fingerprint diversity even without a proxy pool.
     """
     proxy_pool: list[str | None] = settings.proxies or [None]  # type: ignore[list-item]
 
@@ -107,12 +165,14 @@ async def build_workers(
             log.warning("fleet.cookie_decrypt_failed", platform=platform, user_id=uid_str, exc=str(exc))
             cookies = {}
         proxy = proxy_pool[i % len(proxy_pool)]
+        profile = BROWSER_PROFILES[i % len(BROWSER_PROFILES)]
         slots.append(
             WorkerSlot(
                 user_id=row.user_id,
                 platform=platform,
                 cookies=cookies,
                 proxy=proxy,
+                profile=profile,
             )
         )
 
@@ -157,6 +217,7 @@ async def _run_worker(
             request_delay=settings.request_delay_seconds,
             proxies=[slot.proxy] if slot.proxy else None,
             cookies=slot.cookies or None,
+            extra_headers=slot.profile or None,
         )
     except ValueError:
         log.warning("fleet.unknown_source", source=slot.platform)
@@ -236,6 +297,7 @@ async def run_filter_fleet(
                     platform=source,
                     cookies={},
                     proxy=proxy_pool[0],
+                    profile=BROWSER_PROFILES[0],
                 )
             ]
             log.info("fleet.anonymous_fallback", source=source, filter_id=filter_id)
@@ -246,3 +308,44 @@ async def run_filter_fleet(
             continue
 
         await _run_worker(session_factory, filter_id, fc, slot)
+
+
+async def scrape_source_for_all_filters(
+    session_factory: async_sessionmaker[AsyncSession],
+    source: str,
+) -> None:
+    """Per-source job target: load all filters and run fleet scraping for *source* only.
+
+    This is the function registered as a separate APScheduler job per source when
+    fleet_enabled=True with a non-zero fleet_source_offset_minutes.  Running one
+    job per source (with staggered start times) means idealista, immobiliare, and
+    subito fire at different clock offsets throughout the hour instead of all
+    bursting simultaneously — traffic looks far more organic to rate-detection
+    systems that analyse request patterns at the platform level.
+    """
+    from sqlalchemy import select as _select
+
+    from app.models.filter import Filter
+    from app.schemas.filter import FilterConfig
+
+    async with session_factory() as session:
+        result = await session.execute(_select(Filter))
+        filters = result.scalars().all()
+
+    if not filters:
+        log.debug("fleet.no_filters", source=source)
+        return
+
+    tasks = []
+    for row in filters:
+        fc = FilterConfig.model_validate(row.config)
+        # Only scrape sources this filter actually cares about
+        if fc.sources and source not in fc.sources:
+            continue
+        # Create a scoped FilterConfig that targets exactly this source
+        scoped_fc = fc.model_copy(update={"sources": [source]})
+        tasks.append(run_filter_fleet(session_factory, str(row.id), scoped_fc))
+
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+        log.info("fleet.source_cycle_done", source=source, filters=len(tasks))
