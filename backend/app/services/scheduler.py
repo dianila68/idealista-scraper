@@ -182,7 +182,14 @@ async def _run_scrape_for_filter(
 
 
 async def _scrape_all_filters(session_factory: async_sessionmaker[AsyncSession]) -> None:
-    """Load all active filters from DB and scrape each one."""
+    """Load all active filters from DB and scrape each one.
+
+    When ``settings.fleet_enabled`` is True the fleet runner is used instead of
+    the single-account runner so scraping is distributed across all connected
+    accounts in round-robin order.
+    """
+    from app.services.scrape_fleet import run_filter_fleet
+
     async with session_factory() as session:
         result = await session.execute(select(Filter))
         filters = result.scalars().all()
@@ -194,7 +201,10 @@ async def _scrape_all_filters(session_factory: async_sessionmaker[AsyncSession])
     tasks = []
     for row in filters:
         fc = FilterConfig.model_validate(row.config)
-        tasks.append(_run_scrape_for_filter(session_factory, str(row.id), fc, row.user_id))
+        if settings.fleet_enabled:
+            tasks.append(run_filter_fleet(session_factory, str(row.id), fc))
+        else:
+            tasks.append(_run_scrape_for_filter(session_factory, str(row.id), fc, row.user_id))
 
     await asyncio.gather(*tasks, return_exceptions=True)
 

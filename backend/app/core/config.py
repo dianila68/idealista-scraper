@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     request_delay_seconds: float = 3.0
     proxy_list: str = ""
 
+    # Distributed fleet (experimental)
+    # When True, _scrape_all_filters distributes each filter across all connected
+    # platform accounts in round-robin order instead of only the filter owner's account.
+    fleet_enabled: bool = False
+    # Max random delay (seconds) added between worker starts to avoid synchronised bursts.
+    fleet_jitter_seconds: int = 30
+    # Hard per-account hourly request budget.  Workers that hit this limit are
+    # skipped for the current cycle so the load shifts to other accounts.
+    fleet_requests_per_account_per_hour: int = 30
+
     # Suggestions
     roommate_price_multiplier: float = 1.8
 
